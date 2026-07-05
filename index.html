@@ -29,8 +29,12 @@
   .head-inner{display:flex;align-items:center;gap:14px}
   .seal{flex:0 0 auto;width:58px;height:58px;border-radius:8px;border:2.5px solid var(--ai);color:var(--ai);display:flex;align-items:center;justify-content:center;text-align:center;font-weight:800;font-size:13px;letter-spacing:.06em;line-height:1.15;transform:rotate(-4deg);box-shadow:inset 0 0 0 2px rgba(234,106,27,.14);background:rgba(234,106,27,.04);writing-mode:vertical-rl}
   .brand{font-size:11.5px;font-weight:800;color:var(--ai);letter-spacing:.08em;margin:0 0 1px}
+  .head-text{min-width:0}
   .head-text h1{margin:0;font-size:21px;font-weight:800;letter-spacing:.04em;color:var(--sumi)}
   .head-text p{margin:3px 0 0;font-size:12.5px;color:var(--sumi-soft)}
+  .reset-all{margin-left:auto;flex:0 0 auto;align-self:flex-start;display:flex;align-items:center;gap:5px;background:#fff;color:var(--ai);border:1.5px solid var(--ai);border-radius:9px;font-family:inherit;font-size:12px;font-weight:700;padding:8px 11px;line-height:1;white-space:nowrap}
+  .reset-all:active{background:#fbeeec;transform:translateY(1px)}
+  .reset-all svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2}
 
   section{margin-top:18px}
   .sec-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--ai);letter-spacing:.08em;margin:0 2px 8px}
@@ -204,6 +208,10 @@
       <h1>立替精算書</h1>
       <p>入力 → 領収書を撮影・読込 → PDFで保存・共有</p>
     </div>
+    <button class="reset-all" id="resetTop" type="button">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      すべてリセット
+    </button>
   </div>
 </header>
 
@@ -961,6 +969,25 @@
 
   const snapshot=()=>JSON.stringify({date:$("f_date").value,name:$("f_name").value,rows,attachments,uid});
 
+  /* 保存先の抽象化：ホスト独自のwindow.storageが有ればそれを、無ければlocalStorageを使う（自動保存を確実に効かせる） */
+  const DRAFT_KEY="rikitate:draft";
+  const store={
+    async set(v){
+      try{ if(window.storage&&window.storage.set){ await window.storage.set(DRAFT_KEY,v,false); return true; } }catch(e){}
+      try{ localStorage.setItem(DRAFT_KEY,v); return true; }catch(e){}
+      return false;
+    },
+    async get(){
+      try{ if(window.storage&&window.storage.get){ const r=await window.storage.get(DRAFT_KEY); if(r&&r.value!=null) return r.value; } }catch(e){}
+      try{ return localStorage.getItem(DRAFT_KEY); }catch(e){}
+      return null;
+    },
+    async del(){
+      try{ if(window.storage&&window.storage.delete) await window.storage.delete(DRAFT_KEY); }catch(e){}
+      try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+    }
+  };
+
   /* 入力データの一時保存（再作成用ファイル）と読み込み */
   $("inDraft").addEventListener("change",async e=>{
     const f=e.target.files[0]; e.target.value=""; if(!f) return;
@@ -974,7 +1001,7 @@
     }catch(err){ console.error(err); toast("読み込みに失敗しました（ファイル形式をご確認ください）"); }
   });
   function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveDraft,600); }
-  async function saveDraft(){ try{ if(window.storage&&window.storage.set){ await window.storage.set("rikitate:draft",snapshot(),false); flashSaved(); } }catch(e){} }
+  async function saveDraft(){ try{ if(await store.set(snapshot())) flashSaved(); }catch(e){} }
   function flashSaved(){ const n=$("savedNote"); n.textContent="✓ 下書きを保存しました"; clearTimeout(n._t); n._t=setTimeout(()=>n.textContent="",1800); }
   function migrate(r){
     const base=newRow(); base.id=r.id!=null?r.id:base.id;
@@ -986,26 +1013,26 @@
   }
   async function loadDraft(){
     try{
-      if(window.storage&&window.storage.get){
-        const res=await window.storage.get("rikitate:draft");
-        if(res&&res.value){
-          const d=JSON.parse(res.value);
-          $("f_date").value=d.date||""; $("f_name").value=d.name||"";
-          rows=(d.rows&&d.rows.length)?d.rows.map(migrate):[newRow()];
-          attachments=d.attachments||[];
-          uid=d.uid||(Math.max(0,...rows.map(r=>r.id),...attachments.map(a=>a.id))+1);
-          return true;
-        }
+      const val=await store.get();
+      if(val){
+        const d=JSON.parse(val);
+        $("f_date").value=d.date||""; $("f_name").value=d.name||"";
+        rows=(d.rows&&d.rows.length)?d.rows.map(migrate):[newRow()];
+        attachments=d.attachments||[];
+        uid=d.uid||(Math.max(0,...rows.map(r=>r.id),...attachments.map(a=>a.id))+1);
+        return true;
       }
     }catch(e){}
     return false;
   }
-  $("clearBtn").addEventListener("click",async()=>{
+  async function resetAll(){
     if(!confirm("入力内容と添付をすべて消去します。よろしいですか？")) return;
-    try{ if(window.storage&&window.storage.delete) await window.storage.delete("rikitate:draft"); }catch(e){}
+    await store.del();
     $("f_date").value=new Date().toISOString().slice(0,10); $("f_name").value=""; rows=[newRow()]; attachments=[]; uid=2;
-    renderRows(); renderAtt(); toast("消去しました");
-  });
+    renderRows(); renderAtt(); toast("すべてリセットしました");
+  }
+  $("clearBtn").addEventListener("click",resetAll);
+  $("resetTop").addEventListener("click",resetAll);
   $("f_date").addEventListener("input",scheduleSave);
   $("f_name").addEventListener("input",scheduleSave);
 
