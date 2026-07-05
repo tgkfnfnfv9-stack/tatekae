@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#ea6a1b">
+<title>立替精算書｜株式会社小林機械</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --sumi:#1c1b19; --sumi-soft:#57534c;
+    --kinari:#f4f3ef; --washi:#ffffff;
+    --ai:#ea6a1b; --ai-soft:#cf5b12;
+    --shu:#242320; --shu-deep:#141311;
+    --keisen:#e5e2d9; --keisen-strong:#bcb6a8;
+    --ok:#2f6f4f;
+    --shadow:0 1px 2px rgba(28,27,25,.06),0 6px 18px rgba(28,27,25,.07);
+    /* tiiny.host等の下部広告バーに隠れないための下ボタン用クリアランス（機種で調整可） */
+    --barClear:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',Meiryo,system-ui,sans-serif;color:var(--sumi);background:var(--kinari);line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:calc(96px + var(--barClear))}
+  .wrap{max-width:680px;margin:0 auto;padding:0 14px}
+
+  header{background:#ffffff;border-bottom:3px solid var(--ai);padding:18px 0 16px}
+  .head-inner{display:flex;align-items:center;gap:14px}
+  .seal{flex:0 0 auto;width:58px;height:58px;border-radius:8px;border:2.5px solid var(--ai);color:var(--ai);display:flex;align-items:center;justify-content:center;text-align:center;font-weight:800;font-size:13px;letter-spacing:.06em;line-height:1.15;transform:rotate(-4deg);box-shadow:inset 0 0 0 2px rgba(234,106,27,.14);background:rgba(234,106,27,.04);writing-mode:vertical-rl}
+  .brand{font-size:11.5px;font-weight:800;color:var(--ai);letter-spacing:.08em;margin:0 0 1px}
+  .head-text h1{margin:0;font-size:21px;font-weight:800;letter-spacing:.04em;color:var(--sumi)}
+  .head-text p{margin:3px 0 0;font-size:12.5px;color:var(--sumi-soft)}
+
+  section{margin-top:18px}
+  .sec-label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--ai);letter-spacing:.08em;margin:0 2px 8px}
+  .sec-label::before{content:"";width:14px;height:2px;background:var(--sumi);border-radius:2px}
+
+  .card{background:var(--washi);border:1px solid var(--keisen);border-radius:12px;box-shadow:var(--shadow)}
+  .card.pad{padding:14px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field.full{grid-column:1/-1}
+  label{font-size:11.5px;font-weight:600;color:var(--sumi-soft)}
+  .hint{font-size:10.5px;color:var(--keisen-strong);font-weight:500}
+  input,select{font-family:inherit;font-size:15px;color:var(--sumi);background:#fcfbf7;border:1px solid var(--keisen);border-radius:8px;padding:10px 11px;width:100%}
+  select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%235b574d' fill='none' stroke-width='1.6'/></svg>");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+  input:focus,select:focus{outline:2px solid var(--ai-soft);outline-offset:0;border-color:var(--ai-soft);background:#fff}
+  input:disabled,select:disabled{background:#eeebe4;background:#edeae1;color:#a7a195;opacity:.7}
+  input[inputmode="numeric"]{font-variant-numeric:tabular-nums;text-align:right;letter-spacing:.02em}
+  .yen{position:relative}
+  .yen input{padding-left:24px}
+  .yen::before{content:"¥";position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--sumi-soft);font-size:14px;pointer-events:none}
+
+  .total-card{margin-top:10px;background:var(--ai);color:#fff;border:none;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:12px}
+  .total-card .lbl{font-size:13px;letter-spacing:.06em;opacity:.92}
+  .total-card .amt{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
+  .total-card .amt small{font-size:14px;font-weight:600;opacity:.8;margin-right:2px}
+
+  .row-card{margin-bottom:12px;overflow:hidden}
+  .row-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#faf8f2;border-bottom:1px solid var(--keisen);cursor:pointer;user-select:none}
+  .row-no{flex:0 0 auto;width:26px;height:26px;border-radius:7px;background:var(--ai);color:#fff;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+  .row-head .rh-sub{flex:1;min-width:0;font-size:12px;color:var(--sumi-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row-sub{font-size:14px;font-weight:800;color:var(--shu);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .row-sub small{font-size:11px;font-weight:600;margin-right:1px}
+  .chev{flex:0 0 auto;color:var(--keisen-strong);transition:transform .2s;font-size:13px}
+  .row-card.collapsed .chev{transform:rotate(-90deg)}
+  .row-body{padding:14px}
+  .row-card.collapsed .row-body{display:none}
+  .sub-h{font-size:11px;font-weight:700;color:var(--ai);letter-spacing:.06em;margin:14px 0 8px;padding-top:12px;border-top:1px dashed var(--keisen)}
+  .sub-h:first-child{margin-top:0;padding-top:0;border-top:none}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+  .dates{display:flex;flex-direction:column;gap:7px}
+  .date-item{display:flex;align-items:center;gap:6px}
+  .date-item input[type="date"]{flex:1;min-width:0}
+  .date-tilde{flex:0 0 auto;color:var(--sumi-soft);font-size:13px}
+  .date-x{flex:0 0 auto;width:30px;height:30px;border-radius:7px;border:1px solid var(--keisen);background:#fff;color:var(--shu-deep);font-size:16px;line-height:1}
+  .date-none{font-size:12px;color:var(--keisen-strong)}
+  .date-add{display:flex;gap:8px;margin-top:8px}
+  .date-add-btn{flex:1;background:#fcfbf7;border:1px dashed var(--keisen-strong);color:var(--ai);font-family:inherit;font-size:12.5px;font-weight:700;padding:9px;border-radius:8px}
+  .date-add-btn:active{background:#f3efe5}
+
+  .slot{padding:10px;border:1px solid var(--keisen);border-radius:9px;background:#fcfbf7;margin-bottom:8px}
+  .slot-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .slot-kind{width:auto;min-width:120px;font-size:13.5px;font-weight:700;color:var(--ai);padding:7px 26px 7px 9px;background-color:#fff}
+  .slot-fixed{font-size:13.5px;font-weight:700;color:var(--ai);padding:2px}
+  .slot-hint{font-size:10px;color:var(--sumi-soft);flex:1;min-width:120px;line-height:1.35}
+  .slot .slot-note{font-size:14px}
+  .slot .row-label{font-size:10px;color:var(--keisen-strong);font-weight:600;margin-bottom:3px}
+  .auto-amt{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:9px;padding:9px 11px;background:#f1ede3;border:1px solid var(--keisen);border-radius:8px}
+  .auto-amt .a{font-size:17px;font-weight:800;color:var(--ai);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .auto-amt .n{font-size:10.5px;color:var(--sumi-soft);text-align:right;flex:1;line-height:1.35}
+
+  .del-row{margin-top:6px;width:100%;background:none;border:1px solid var(--keisen);color:var(--shu-deep);font-size:12.5px;font-weight:600;padding:9px;border-radius:8px}
+  .del-row:active{background:#f1efe9}
+  .add-row{width:100%;border:1.5px dashed var(--keisen-strong);background:#fcfbf7;color:var(--ai);font-weight:700;font-size:14px;padding:13px;border-radius:12px;font-family:inherit}
+  .add-row:active{background:#f3efe5}
+
+  .att-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .att-btn{display:flex;flex-direction:column;align-items:center;gap:5px;background:var(--washi);border:1px solid var(--keisen);border-radius:10px;padding:13px 6px;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--ai);box-shadow:var(--shadow)}
+  .att-btn:active{background:#f6f2e9}
+  .att-btn svg{width:22px;height:22px;stroke:var(--shu);fill:none;stroke-width:1.8}
+  .att-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .thumb{position:relative;aspect-ratio:3/4;border-radius:9px;overflow:hidden;border:1px solid var(--keisen);background:#fff}
+  .thumb img{width:100%;height:100%;object-fit:cover}
+  .thumb .x{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(35,33,28,.78);color:#fff;border:none;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center}
+  .thumb .pg{position:absolute;left:0;bottom:0;background:rgba(38,65,94,.85);color:#fff;font-size:9.5px;padding:2px 6px;border-radius:0 7px 0 0;font-weight:600}
+  .att-empty{font-size:12px;color:var(--keisen-strong);text-align:center;padding:14px 0}
+
+  .actionbar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:rgba(246,242,233,.94);backdrop-filter:blur(8px);border-top:1px solid var(--keisen);padding:10px 14px var(--barClear);display:flex;gap:8px;max-width:680px;margin:0 auto}
+  .btn{flex:1;font-family:inherit;font-weight:700;font-size:13px;padding:13px 4px;border-radius:11px;border:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+  .btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2}
+  .btn-load{background:var(--washi);color:var(--ai);border:1.5px solid var(--keisen-strong)}
+  .btn-save{background:var(--washi);color:var(--ai);border:1.5px solid var(--ai)}
+  .btn-share{background:var(--shu);color:#fff;box-shadow:0 4px 14px rgba(20,19,17,.28)}
+  .btn:disabled{opacity:.5}
+  .btn:active{transform:translateY(1px)}
+
+  .util-row{display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding:0 2px}
+  .util-row .saved{font-size:11px;color:var(--ok)}
+  .clear-btn{background:none;border:none;color:var(--keisen-strong);font-size:12px;font-family:inherit;text-decoration:underline}
+
+  .overlay{position:fixed;inset:0;z-index:200;background:rgba(246,242,233,.85);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px}
+  .overlay.on{display:flex}
+  .spinner{width:38px;height:38px;border:3px solid var(--keisen);border-top-color:var(--shu);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .overlay p{font-size:13px;font-weight:700;color:var(--ai)}
+  .toast{position:fixed;left:50%;bottom:calc(86px + var(--barClear));transform:translateX(-50%) translateY(20px);background:var(--sumi);color:#fff;font-size:13px;padding:11px 18px;border-radius:10px;opacity:0;transition:.25s;z-index:300;pointer-events:none;max-width:90%;text-align:center}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .save-note{font-size:11.5px;color:var(--sumi-soft);line-height:1.55;margin:0 0 12px}
+  .save-note b{color:var(--ai);font-weight:700}
+  .save-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+  .btn-preview{background:var(--ai);color:#fff}
+  .btn-save{background:var(--washi);color:var(--ai);border:1.5px solid var(--ai)}
+  .btn-share{background:var(--shu);color:#fff;box-shadow:0 4px 14px rgba(20,19,17,.28)}
+
+  /* 添付チェック */
+  .chk{background:#fbeeec;border:1px solid #eccbc6;border-radius:10px;padding:11px 12px;margin-bottom:12px}
+  .chk-title{font-size:12.5px;font-weight:800;color:var(--shu-deep);display:flex;align-items:center;gap:6px}
+  .chk-title::before{content:"!";flex:0 0 auto;width:16px;height:16px;border-radius:50%;background:var(--shu);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .chk-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
+  .chk-tag{background:#fff;border:1px solid #e0c2bc;color:var(--shu-deep);font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:20px}
+  .chk-note{font-size:10.5px;color:var(--sumi-soft);line-height:1.4}
+  .nextday{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:12px;color:var(--sumi-soft);line-height:1.4}
+  .nextday input{width:17px;height:17px;accent-color:var(--ai);flex:0 0 auto}
+
+  /* プレビュー */
+  .pv{position:fixed;inset:0;z-index:150;background:var(--kinari);display:none;flex-direction:column}
+  .pv.on{display:flex}
+  .pv-bar{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:13px 16px;background:var(--ai);color:#fff}
+  .pv-title{font-size:15px;font-weight:800;letter-spacing:.04em}
+  .pv-close{background:rgba(255,255,255,.16);border:none;color:#fff;font-family:inherit;font-size:13px;font-weight:700;padding:7px 14px;border-radius:8px}
+  .pv-body{flex:1;overflow:auto;padding:16px 14px 26px;-webkit-overflow-scrolling:touch}
+  .pv-label{font-size:11px;font-weight:700;color:var(--ai);letter-spacing:.06em;margin:6px 2px 8px}
+  .pv-sheetwrap{overflow:auto;border:1px solid var(--keisen);border-radius:8px;background:#fff;margin-bottom:18px;-webkit-overflow-scrolling:touch}
+  .pv-sheet{display:block;width:1150px;max-width:none;height:auto;cursor:zoom-out}
+  .pv-sheet.fit{width:100%;cursor:zoom-in}
+  .pv-atts{display:flex;flex-direction:column;gap:12px}
+  .pv-att{border:1px solid var(--keisen);border-radius:8px;background:#fff;overflow:hidden}
+  .pv-att img{display:block;width:100%;height:auto}
+  .pv-att span{display:block;font-size:11px;color:var(--sumi-soft);padding:6px 10px;background:#faf8f2;border-top:1px solid var(--keisen)}
+  .pv-empty{font-size:12px;color:var(--keisen-strong);text-align:center;padding:20px 0}
+  .pv-hint{font-size:10.5px;color:var(--keisen-strong);margin:0 2px 10px}
+  .pv-foot{flex:0 0 auto;display:flex;gap:8px;padding:10px 14px var(--barClear);border-top:1px solid var(--keisen);background:var(--washi)}
+
+  .scan-toggle{display:flex;gap:8px;margin-bottom:12px}
+  .scan-toggle button{flex:1;font-family:inherit;font-size:13px;font-weight:700;padding:10px;border-radius:9px;border:1px solid var(--keisen);background:var(--washi);color:var(--sumi-soft)}
+  .scan-toggle button.on{background:var(--ai);color:#fff;border-color:var(--ai)}
+  .scan-stage{background:#2b2823;border-radius:10px;padding:10px;display:flex;align-items:center;justify-content:center;min-height:220px;overflow:hidden}
+  .scan-stage img{max-width:100%;max-height:60vh;height:auto;border-radius:4px;box-shadow:0 2px 10px rgba(0,0,0,.3);transition:transform .15s}
+  .scan-rotate{margin-top:12px;width:100%;font-family:inherit;font-size:13px;font-weight:700;color:var(--ai);background:var(--washi);border:1px solid var(--keisen-strong);border-radius:9px;padding:10px}
+  .scan-hint{font-size:11px;color:var(--sumi-soft);margin:10px 2px 0;line-height:1.5;text-align:center}
+
+  #printArea{position:fixed;left:-20000px;top:0;background:#fff}
+  #printArea .pa-page{width:1480px;background:#fff;color:#000;padding:26px 28px;font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',Meiryo,sans-serif}
+  #printArea .pa-page + .pa-page{margin-top:24px}
+  #printArea .pa-pageno{margin-left:auto;font-weight:700}
+  #printArea .pa-title{font-size:18px;font-weight:800;letter-spacing:.18em;margin:0 0 12px}
+  #printArea .pa-meta{display:flex;gap:36px;font-size:14px;margin-bottom:12px}
+  #printArea .pa-meta .ln{border-bottom:1px solid #000;min-width:90px;padding:0 8px 1px;display:inline-block;font-weight:700}
+  #printArea table{width:100%;border-collapse:collapse;table-layout:fixed}
+  #printArea th,#printArea td{border:1px solid #444;font-size:10px;padding:4px 5px;vertical-align:top;word-break:break-all}
+  #printArea th{background:#f0ede5;font-weight:700;text-align:center;line-height:1.22;font-size:9px}
+  #printArea td .two{display:flex;flex-direction:column;gap:3px;min-height:var(--twoMin,34px);height:100%;justify-content:space-between}
+  #printArea td .desc{color:#222;font-size:9.5px;min-height:11px;border-bottom:1px dotted #bbb;padding-bottom:2px}
+  #printArea td .tag{display:inline-block;background:#ece5d8;color:#9e3328;font-weight:700;font-size:8px;padding:0 4px;border-radius:3px;margin-right:3px}
+  #printArea td .konkind{color:#26415e;font-weight:700;font-size:8px}
+  #printArea .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:11px}
+  #printArea .sub td{font-weight:700;font-size:11px;background:#faf8f2}
+  #printArea .grand{font-size:15px;font-weight:800;text-align:right}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap head-inner">
+    <div class="seal">立替精算</div>
+    <div class="head-text">
+      <div class="brand">株式会社小林機械</div>
+      <h1>立替精算書</h1>
+      <p>入力 → 領収書を撮影・読込 → PDFで保存・共有</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <div class="sec-label">基本情報</div>
+    <div class="card pad">
+      <div class="grid2">
+        <div class="field"><label>提出日</label><input type="date" id="f_date"></div>
+        <div class="field"><label>氏名</label><input type="text" id="f_name" placeholder="氏名"></div>
+      </div>
+      <div class="total-card">
+        <span class="lbl">仮払い金合計</span>
+        <span class="amt"><small>¥</small><span id="grandTotal">0</span></span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-label">明細</div>
+    <div id="rows"></div>
+    <button class="add-row" id="addRow">＋ 明細を追加</button>
+  </section>
+
+  <section>
+    <div class="sec-label">領収書・添付書類</div>
+    <div class="card pad">
+      <div class="chk" id="attChecklist" style="display:none"></div>
+      <div class="att-btns">
+        <button class="att-btn" id="btnScan">
+          <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7l1.5-2h3L15 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+          カメラ撮影
+        </button>
+        <button class="att-btn" id="btnImg">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5L5 20"/></svg>
+          画像を選択
+        </button>
+        <button class="att-btn" id="btnPdf">
+          <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>
+          PDFを読込
+        </button>
+      </div>
+      <div class="att-grid" id="attGrid"></div>
+      <div class="att-empty" id="attEmpty">まだ添付はありません</div>
+    </div>
+  </section>
+
+  <div class="util-row">
+    <span class="saved" id="savedNote"></span>
+    <button class="clear-btn" id="clearBtn">下書きを消去</button>
+  </div>
+</div>
+
+<div class="actionbar">
+  <button class="btn btn-preview" id="btnPreview">
+    <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+    確認
+  </button>
+  <button class="btn btn-save" id="btnSavePdf">
+    <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+    保存
+  </button>
+  <button class="btn btn-load" id="btnLoad">
+    <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 17v-6M9 14l3 3 3-3" transform="rotate(180 12 14)"/></svg>
+    読込
+  </button>
+  <button class="btn btn-share" id="btnShare">
+    <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+    共有
+  </button>
+</div>
+
+<div class="pv" id="preview">
+  <div class="pv-bar"><span class="pv-title">プレビュー（確認）</span><button class="pv-close" id="pvClose">閉じる</button></div>
+  <div class="pv-body" id="pvBody"></div>
+  <div class="pv-foot">
+    <button class="btn btn-save" id="pvSave">保存（データ）</button>
+    <button class="btn btn-share" id="pvShare">共有（PDF）</button>
+  </div>
+</div>
+
+<input type="file" id="inScan" accept="image/*" capture="environment" style="display:none">
+<input type="file" id="inImg" accept="image/*" multiple style="display:none">
+<input type="file" id="inPdf" accept="application/pdf" multiple style="display:none">
+<input type="file" id="inDraft" accept="application/json,.json" style="display:none">
+
+<div class="overlay" id="overlay"><div class="spinner"></div><p id="ovText">処理中…</p></div>
+<div class="toast" id="toast"></div>
+<div id="printArea"></div>
+
+<script>
+(function(){
+  "use strict";
+  const { jsPDF } = window.jspdf || {};
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+  // 日本語(CIDフォント)を描画するためのCMap・標準フォントの場所
+  const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/";
+
+  const AMT_KEYS = ["plaza","transport","lodging","perDiem","gas","other1","other2"];
+  const LODGE = [
+    {label:"なし", rate:9000},
+    {label:"主任・班長", rate:10000},
+    {label:"係長・課長・次長・部長", rate:11000},
+  ];
+  const lodgeRate = lbl => (LODGE.find(x=>x.label===lbl)||LODGE[0]).rate;
+  const GAS_PER_KM = 30;
+
+  let rows = [], attachments = [], uid = 1, saveTimer = null;
+  const $ = id => document.getElementById(id);
+  const yen = n => (Number(n)||0).toLocaleString("ja-JP");
+  const toNum = v => { const n = parseInt(String(v).replace(/[^\d.-]/g,""),10); return isNaN(n)?0:n; };
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const fmtMD = d => { if(!d) return ""; const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m?`${Number(m[2])}/${Number(m[3])}`:d; };
+  function fmtDates(r){
+    if(!r.dates||!r.dates.length) return "";
+    return r.dates.map(dt=> dt.type==="range"
+      ? ((dt.d1||dt.d2)?`${fmtMD(dt.d1)}〜${fmtMD(dt.d2)}`:"")
+      : fmtMD(dt.d1)
+    ).filter(Boolean).join("、");
+  }
+  function dateItem(id,di,dt,dis){
+    if(dt.type==="range"){
+      return `<div class="date-item">
+        <input data-id="${id}" data-di="${di}" data-dk="d1" type="date" value="${esc(dt.d1)}" ${dis?"disabled":""}>
+        <span class="date-tilde">〜</span>
+        <input data-id="${id}" data-di="${di}" data-dk="d2" type="date" value="${esc(dt.d2)}" ${dis?"disabled":""}>
+        ${dis?"":`<button type="button" class="date-x" data-rmdate="${id}:${di}">×</button>`}
+      </div>`;
+    }
+    return `<div class="date-item">
+      <input data-id="${id}" data-di="${di}" data-dk="d1" type="date" value="${esc(dt.d1)}" ${dis?"disabled":""}>
+      ${dis?"":`<button type="button" class="date-x" data-rmdate="${id}:${di}">×</button>`}
+    </div>`;
+  }
+
+  function newRow(){
+    return { id:uid++, date:"", dates:[{type:"single",d1:""}], konType:"高コン番号", konCustom:"", konNo:"", address:"",
+      depart:"", ret:"", retNextDay:false, wStart:"", wEnd:"",
+      plazaKind:"プラザ手当", plaza:"", plazaNote:"", _plazaCalc:"",
+      transportKind:"交通費", transportNote:"", transport:"",
+      lodgingKind:"宿泊費", lodgingRank:"なし", lodgingNights:"0", lodgingNote:"", lodging:"", _lodgeCalc:"",
+      perDiemKind:"宿泊日当", perDiemNote:"", perDiem:"",
+      gasMode:"auto", gasVehicle:"", gasOneway:"", gasTrips:"", gasNote:"", gasCalc:"", gas:"",
+      other1Note:"", other1:"", other2Note:"", other2:"",
+      other3Note:"", other3:"", other4Note:"", other4:"",
+      collapsed:false };
+  }
+
+  const timeToMin = t => { if(!t||!/^\d{1,2}:\d{2}$/.test(t)) return null; const [h,m]=t.split(":").map(Number); return h*60+m; };
+
+  // 高コン番号 以外（機械バーコード／カスタム）は全費目「その他」
+  const isAllOther = r => r.konType!=="高コン番号";
+  const konLabel = r => r.konType==="カスタム" ? (r.konCustom||"カスタム") : r.konType;
+  function subLineOf(r){
+    if(r.konType==="機械バーコード") return (r.konNo||r.address?`機械バーコード ${r.konNo} ${r.address}`.trim():"未入力");
+    if(r.konType==="カスタム") return ([fmtDates(r), r.konCustom].filter(Boolean).join(" ／ ")||"未入力");
+    return ([fmtDates(r),(r.konNo?`[${konLabel(r)}]${r.konNo}`:""),r.address].filter(Boolean).join(" ／ ")||"未入力");
+  }
+
+  function recalc(r){
+    const allOther = isAllOther(r);
+    // プラザ手当（高コンのみ自動）: 出発6:00以前/帰社21:00以降で各1,000円
+    if(allOther){ r._plazaCalc=""; }
+    else {
+      let parts=[], plaza=0;
+      const dep=timeToMin(r.depart), rt=timeToMin(r.ret);
+      if(dep!=null && dep <= 360){ plaza+=1000; parts.push("出発6時以前 +1,000"); }
+      if(r.retNextDay || (rt!=null && rt >= 1260)){ plaza+=1000; parts.push(r.retNextDay ? "帰社翌日 +1,000" : "帰社21時以降 +1,000"); }
+      r.plaza = plaza?String(plaza):"";
+      r._plazaCalc = parts.length ? parts.join("・")+` ＝ ${yen(plaza)}円` : "";
+    }
+    // 宿泊費（高コンのみ自動）: 肩書き単価 × 泊数
+    if(allOther){ r._lodgeCalc=""; }
+    else {
+      const rate=lodgeRate(r.lodgingRank), nights=toNum(r.lodgingNights), lodge=rate*nights;
+      r.lodging = lodge?String(lodge):"";
+      r._lodgeCalc = lodge ? `${r.lodgingRank} ${yen(rate)}円×${nights}泊` : "";
+    }
+    // ガソリン代（高コンのみ 自動/手動）: 片道×2×回数×30円
+    if(!allOther && r.gasMode==="auto"){
+      const ow=toNum(r.gasOneway), tr=toNum(r.gasTrips), km=ow*2*tr, g=km*GAS_PER_KM;
+      r.gas = g?String(g):"";
+      r.gasCalc = g ? `${ow}km×2×${GAS_PER_KM}円×${tr}回＝${yen(g)}円` : "";
+    } else {
+      r.gasCalc = "";
+    }
+  }
+
+  const rowSubtotal = r => AMT_KEYS.reduce((s,k)=>s+toNum(r[k]),0) + (isAllOther(r)?toNum(r.other3)+toNum(r.other4):0);
+  const grandTotal = () => rows.reduce((s,r)=>s+rowSubtotal(r),0);
+
+  /* ── 入力カード ── */
+  function renderRows(){
+    const host=$("rows"); host.innerHTML="";
+    rows.forEach((r,i)=>{
+      recalc(r);
+      const isBC = r.konType==="機械バーコード";
+      const isCustom = r.konType==="カスタム";
+      const allOther = isBC || isCustom;
+      const dateOff = allOther;    // 機械・カスタムは日付・時間オフ
+      const sub = rowSubtotal(r);
+      const numLabel = isBC?"バーコード番号":"番号";
+      const addrLabel = isBC?"型番": "出張先住所・件名";
+      const subLine = subLineOf(r);
+      const card=document.createElement("div");
+      card.className="card row-card"+(r.collapsed?" collapsed":"");
+      card.innerHTML=`
+        <div class="row-head" data-toggle="${r.id}">
+          <span class="row-no">${i+1}</span>
+          <span class="rh-sub">${esc(subLine)}</span>
+          <span class="row-sub"><small>¥</small>${yen(sub)}</span>
+          <span class="chev">▾</span>
+        </div>
+        <div class="row-body">
+          <div class="sub-h">出張情報</div>
+          <div class="field"><label>番号の種類</label>
+            <select data-id="${r.id}" data-key="konType">
+              <option ${r.konType==="高コン番号"?"selected":""}>高コン番号</option>
+              <option ${isBC?"selected":""}>機械バーコード</option>
+              <option ${isCustom?"selected":""}>カスタム</option>
+            </select></div>
+          ${isCustom
+            ? `<div class="field full" style="margin-top:8px"><label>コメント</label>
+                 <input data-id="${r.id}" data-key="konCustom" type="text" value="${esc(r.konCustom)}" placeholder="コメントを入力"></div>`
+            : `<div class="field full" style="margin-top:8px"><label>${numLabel}</label>
+                 <input data-id="${r.id}" data-key="konNo" type="text" value="${esc(r.konNo)}" placeholder="${numLabel}を入力"></div>
+               <div class="field full" style="margin-top:8px"><label>${addrLabel}</label>
+                 <input data-id="${r.id}" data-key="address" type="text" value="${esc(r.address)}" placeholder="${isBC?"型番を入力":"出張先 / 作業内容"}"></div>`
+          }
+          <div class="field full" style="margin-top:8px">
+            <label>出張日（複数可）${dateOff?' <span class="hint">この種別では入力不可</span>':' <span class="hint">単日・期間をいくつでも追加できます</span>'}</label>
+            <div class="dates">${(r.dates||[]).map((dt,di)=>dateItem(r.id,di,dt,dateOff)).join("")||'<span class="date-none">日付なし</span>'}</div>
+            ${dateOff?"":`<div class="date-add">
+              <button type="button" class="date-add-btn" data-addsingle="${r.id}">＋ 単日</button>
+              <button type="button" class="date-add-btn" data-addrange="${r.id}">＋ 期間</button>
+            </div>`}
+          </div>
+
+          ${allOther
+            ? `<div class="sub-h">その他</div>
+               ${otherInput(r,"other3","その他")}
+               ${otherInput(r,"other4","その他")}`
+            : `<div class="sub-h">時間</div>
+               <div class="pair">
+                 ${timeF(r.id,"depart","出発",r.depart,false)}
+                 ${timeF(r.id,"ret","帰社",r.ret,false)}
+               </div>
+               <label class="nextday"><input type="checkbox" data-id="${r.id}" data-key="retNextDay" ${r.retNextDay?"checked":""}> 帰社が翌日（夜勤明け等）→ プラザ早退手当 +1,000円</label>
+               <div class="pair" style="margin-top:8px">
+                 ${timeF(r.id,"wStart","作業開始",r.wStart,false)}
+                 ${timeF(r.id,"wEnd","作業終了",r.wEnd,false)}
+               </div>`
+          }
+
+          ${allOther?'<div class="sub-h"><span class="hint">全費目「その他」入力</span></div>':''}
+          ${plazaSlot(r,allOther)}
+          ${transportSlot(r,allOther)}
+          ${lodgingSlot(r,allOther)}
+          ${perDiemSlot(r,allOther)}
+          ${gasSlot(r,allOther)}
+          ${otherSlot(r,"other1")}
+          ${otherSlot(r,"other2")}
+
+          <button class="del-row" data-del="${r.id}">この明細を削除</button>
+        </div>`;
+      host.appendChild(card);
+    });
+    $("grandTotal").textContent=yen(grandTotal());
+    bindRowEvents();
+    updateChecklist();
+  }
+
+  function timeF(id,key,label,val,dis){
+    return `<div class="field"><label>${label}</label><input data-id="${id}" data-key="${key}" type="time" value="${esc(val)}" ${dis?"disabled":""}></div>`;
+  }
+  // 機械/カスタム時の汎用「その他」入力
+  function otherInput(r,key,title){
+    return `<div class="slot">
+      <div class="slot-top"><span class="slot-fixed">${title}</span></div>
+      <div class="row-label">説明欄（上の行）</div>
+      <input class="slot-note" data-id="${r.id}" data-key="${key}Note" value="${esc(r[key+"Note"])}" placeholder="内容・支払先">
+      <div class="row-label">金額欄（下の行）</div>
+      <div class="yen"><input data-id="${r.id}" data-key="${key}" inputmode="numeric" value="${esc(r[key])}" placeholder="0"></div>
+    </div>`;
+  }
+  function plazaSlot(r,allOther){
+    if(allOther) return otherInput(r,"plaza","その他");
+    return `<div class="slot">
+      <div class="slot-top"><span class="slot-fixed">プラザ起点 早退手当</span>
+        <span class="slot-hint">出発6時以前＋帰社21時以降で各1,000円（最大2,000円・手入力不要）</span></div>
+      <div class="auto-amt"><span class="a" data-calc="plazaAmt">¥${yen(r.plaza||0)}</span><span class="n" data-calc="plazaCalc">${esc(r._plazaCalc||"条件なし")}</span></div>
+    </div>`;
+  }
+  function fixedSlot(r,key,def,hint){
+    return `<div class="slot">
+      <div class="slot-top"><span class="slot-fixed">${def}</span>${hint?`<span class="slot-hint">${hint}</span>`:""}</div>
+      <div class="row-label">説明欄（上の行）</div>
+      <input class="slot-note" data-id="${r.id}" data-key="${key}Note" value="${esc(r[key+"Note"])}" placeholder="内容・支払先">
+      <div class="row-label">金額欄（下の行）</div>
+      <div class="yen"><input data-id="${r.id}" data-key="${key}" inputmode="numeric" value="${esc(r[key])}" placeholder="0"></div>
+    </div>`;
+  }
+  function transportSlot(r,allOther){
+    return allOther ? otherInput(r,"transport","その他")
+                    : fixedSlot(r,"transport","交通費","ETC・電車他・駐車場代");
+  }
+  function perDiemSlot(r,allOther){
+    return allOther ? otherInput(r,"perDiem","その他")
+                    : fixedSlot(r,"perDiem","宿泊日当","(食事) 2,000円　1人が割勘の場合は有");
+  }
+  function nightsOptions(sel){ let o=""; for(let i=0;i<=14;i++){ o+=`<option ${String(i)===String(sel||"0")?"selected":""}>${i}</option>`; } return o; }
+  function lodgingSlot(r,allOther){
+    if(allOther) return otherInput(r,"lodging","その他");
+    return `<div class="slot">
+      <div class="slot-top"><span class="slot-fixed">宿泊費</span>
+        <span class="slot-hint">肩書き単価 × 泊数（なし9,000／主任・班長10,000／係長以上11,000円）</span></div>
+      <div class="pair">
+        <div class="field"><label>肩書き</label>
+          <select data-id="${r.id}" data-key="lodgingRank">
+            ${LODGE.map(x=>`<option value="${x.label}" ${x.label===r.lodgingRank?"selected":""}>${x.label}（${yen(x.rate)}円）</option>`).join("")}
+          </select></div>
+        <div class="field"><label>泊数</label>
+          <select data-id="${r.id}" data-key="lodgingNights">${nightsOptions(r.lodgingNights)}</select></div>
+      </div>
+      <div class="row-label" style="margin-top:7px">宿泊先（説明欄）</div>
+      <input class="slot-note" data-id="${r.id}" data-key="lodgingNote" value="${esc(r.lodgingNote)}" placeholder="宿泊先">
+      <div class="auto-amt"><span class="a" data-calc="lodgeAmt">¥${yen(r.lodging||0)}</span><span class="n" data-calc="lodgeCalc">${esc(r._lodgeCalc||"")}</span></div>
+    </div>`;
+  }
+  function gasSlot(r,allOther){
+    if(allOther) return otherInput(r,"gas","その他");
+    const mode = r.gasMode==="manual" ? "manual" : "auto";
+    const inner = mode==="auto"
+      ? `<div class="pair">
+           <div class="field"><label>片道（km）</label><input data-id="${r.id}" data-key="gasOneway" inputmode="numeric" value="${esc(r.gasOneway)}" placeholder="0"></div>
+           <div class="field"><label>往復回数</label><input data-id="${r.id}" data-key="gasTrips" inputmode="numeric" value="${esc(r.gasTrips)}" placeholder="0"></div>
+         </div>
+         <div class="row-label" style="margin-top:7px">対象車両（任意）</div>
+         <input class="slot-note" data-id="${r.id}" data-key="gasVehicle" value="${esc(r.gasVehicle)}" placeholder="対象車両を明記">
+         <div class="auto-amt"><span class="a" data-calc="gasAmt">¥${yen(r.gas||0)}</span><span class="n" data-calc="gasCalc">${esc(r.gasCalc||"")}</span></div>`
+      : `<div class="row-label">対象車両（任意）</div>
+         <input class="slot-note" data-id="${r.id}" data-key="gasVehicle" value="${esc(r.gasVehicle)}" placeholder="対象車両を明記">
+         <div class="row-label" style="margin-top:7px">説明欄（上の行）</div>
+         <input class="slot-note" data-id="${r.id}" data-key="gasNote" value="${esc(r.gasNote)}" placeholder="内容・支払先">
+         <div class="row-label" style="margin-top:7px">金額欄（下の行）</div>
+         <div class="yen"><input data-id="${r.id}" data-key="gas" inputmode="numeric" value="${esc(r.gas)}" placeholder="0"></div>`;
+    return `<div class="slot">
+      <div class="slot-top"><span class="slot-fixed">ガソリン代</span>
+        <select class="slot-kind" data-id="${r.id}" data-key="gasMode">
+          <option value="auto" ${mode==="auto"?"selected":""}>自動計算（1km30円）</option>
+          <option value="manual" ${mode==="manual"?"selected":""}>手動入力</option>
+        </select></div>
+      ${inner}
+    </div>`;
+  }
+  function otherSlot(r,key){
+    return `<div class="slot">
+      <div class="slot-top"><span class="slot-fixed">その他</span></div>
+      <div class="row-label">説明欄（上の行）</div>
+      <input class="slot-note" data-id="${r.id}" data-key="${key}Note" value="${esc(r[key+"Note"])}" placeholder="内容・支払先">
+      <div class="row-label">金額欄（下の行）</div>
+      <div class="yen"><input data-id="${r.id}" data-key="${key}" inputmode="numeric" value="${esc(r[key])}" placeholder="0"></div>
+    </div>`;
+  }
+
+  function refreshCalc(card,r){
+    if(!card) return;
+    const set=(sel,val)=>{ const el=card.querySelector(sel); if(el) el.textContent=val; };
+    set('[data-calc="plazaAmt"]', "¥"+yen(r.plaza||0));
+    set('[data-calc="plazaCalc"]', r._plazaCalc||"条件なし");
+    set('[data-calc="lodgeAmt"]', "¥"+yen(r.lodging||0));
+    set('[data-calc="lodgeCalc"]', r._lodgeCalc||"");
+    set('[data-calc="gasAmt"]', "¥"+yen(r.gas||0));
+    set('[data-calc="gasCalc"]', r.gasCalc||"");
+    const rs=card.querySelector(".row-sub"); if(rs) rs.innerHTML=`<small>¥</small>${yen(rowSubtotal(r))}`;
+    $("grandTotal").textContent=yen(grandTotal());
+    updateChecklist();
+  }
+
+  function bindRowEvents(){
+    document.querySelectorAll("#rows input").forEach(el=>{
+      if(el.dataset.dk) return; // 出張日は別処理
+      const handler=e=>{
+        const r=rows.find(x=>x.id==e.target.dataset.id); if(!r) return;
+        r[e.target.dataset.key] = e.target.type==="checkbox" ? e.target.checked : e.target.value;
+        recalc(r);
+        refreshCalc(e.target.closest(".row-card"), r);
+        scheduleSave();
+      };
+      el.addEventListener("input",handler);
+      el.addEventListener("change",handler);
+    });
+    // 出張日（単日／期間）
+    document.querySelectorAll("#rows [data-dk]").forEach(el=>{
+      el.addEventListener("change",e=>{
+        const r=rows.find(x=>x.id==e.target.dataset.id); if(!r||!r.dates) return;
+        const di=+e.target.dataset.di;
+        if(r.dates[di]) r.dates[di][e.target.dataset.dk]=e.target.value;
+        scheduleSave();
+      });
+    });
+    document.querySelectorAll("[data-addsingle]").forEach(b=>b.addEventListener("click",()=>{
+      const r=rows.find(x=>x.id==b.dataset.addsingle); if(!r) return;
+      (r.dates=r.dates||[]).push({type:"single",d1:""}); renderRows(); scheduleSave();
+    }));
+    document.querySelectorAll("[data-addrange]").forEach(b=>b.addEventListener("click",()=>{
+      const r=rows.find(x=>x.id==b.dataset.addrange); if(!r) return;
+      (r.dates=r.dates||[]).push({type:"range",d1:"",d2:""}); renderRows(); scheduleSave();
+    }));
+    document.querySelectorAll("[data-rmdate]").forEach(b=>b.addEventListener("click",()=>{
+      const p=b.dataset.rmdate.split(":"); const r=rows.find(x=>x.id==p[0]); if(!r||!r.dates) return;
+      r.dates.splice(+p[1],1); renderRows(); scheduleSave();
+    }));
+    document.querySelectorAll("#rows select").forEach(el=>{
+      el.addEventListener("change",e=>{
+        const r=rows.find(x=>x.id==e.target.dataset.id); if(!r) return;
+        r[e.target.dataset.key]=e.target.value;
+        renderRows();           // 種別・モード変更はレイアウトに影響するため再描画
+        scheduleSave();
+      });
+    });
+    document.querySelectorAll("[data-toggle]").forEach(h=>{
+      h.addEventListener("click",e=>{
+        if(e.target.closest("input")||e.target.closest("select")) return;
+        const r=rows.find(x=>x.id==h.dataset.toggle);
+        r.collapsed=!r.collapsed;
+        h.closest(".row-card").classList.toggle("collapsed");
+        h.querySelector(".rh-sub").textContent=subLineOf(r);
+      });
+    });
+    document.querySelectorAll("[data-del]").forEach(b=>{
+      b.addEventListener("click",()=>{
+        if(rows.length<=1){ toast("最低1件は必要です"); return; }
+        rows=rows.filter(x=>x.id!=b.dataset.del); renderRows(); scheduleSave();
+      });
+    });
+  }
+
+  $("addRow").addEventListener("click",()=>{
+    rows.forEach(r=>r.collapsed=true);
+    rows.push(newRow()); renderRows(); scheduleSave();
+    window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"});
+  });
+
+  /* ── 領収書 ── */
+  function renderAtt(){
+    const g=$("attGrid"); g.innerHTML="";
+    attachments.forEach(a=>{
+      const d=document.createElement("div"); d.className="thumb";
+      d.innerHTML=`<img src="${a.dataUrl}"><button class="x" data-rm="${a.id}">×</button>${a.label?`<span class="pg">${esc(a.label)}</span>`:""}`;
+      g.appendChild(d);
+    });
+    $("attEmpty").style.display=attachments.length?"none":"block";
+    updateChecklist();
+    g.querySelectorAll("[data-rm]").forEach(b=>b.addEventListener("click",()=>{
+      attachments=attachments.filter(a=>a.id!=b.dataset.rm); renderAtt(); scheduleSave();
+    }));
+  }
+  $("btnScan").addEventListener("click",()=>$("inScan").click());
+  $("btnImg").addEventListener("click",()=>$("inImg").click());
+  $("btnPdf").addEventListener("click",()=>$("inPdf").click());
+  function readImage(file,label){
+    return new Promise(res=>{ const r=new FileReader(); r.onload=()=>{ attachments.push({id:uid++,dataUrl:r.result,label:label||""}); res(); }; r.readAsDataURL(file); });
+  }
+  async function handleImgs(files,label){ for(const f of files){ await readImage(f,label||""); } renderAtt(); scheduleSave(); }
+
+  $("inScan").addEventListener("change",async e=>{ if(e.target.files.length){ await handleImgs([...e.target.files],"撮影"); toast("写真を追加しました"); } e.target.value=""; });
+  $("inImg").addEventListener("change",async e=>{ if(e.target.files.length){ await handleImgs([...e.target.files],""); toast(e.target.files.length+"件の画像を追加"); } e.target.value=""; });
+  $("inPdf").addEventListener("change",async e=>{
+    const files=[...e.target.files]; e.target.value=""; if(!files.length) return;
+    if(!window.pdfjsLib){ toast("PDF読込が利用できません"); return; }
+    showOverlay("PDFを読み込み中…");
+    try{ for(const f of files){ await loadPdf(f); } renderAtt(); scheduleSave(); toast("PDFを取り込みました"); }
+    catch(err){ console.error(err); toast("PDFの読込に失敗しました"); }
+    hideOverlay();
+  });
+  async function loadPdf(file){
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({
+      data:buf,
+      cMapUrl: PDFJS_BASE+"cmaps/",
+      cMapPacked: true,
+      standardFontDataUrl: PDFJS_BASE+"standard_fonts/"
+    }).promise;
+    const base=file.name.replace(/\.pdf$/i,"");
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p);
+      const vp=page.getViewport({scale:2});
+      const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height;
+      const ctx=cv.getContext("2d");
+      ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,cv.width,cv.height); // 透明背景対策で白地に
+      await page.render({canvasContext:ctx,viewport:vp}).promise;
+      attachments.push({id:uid++,dataUrl:cv.toDataURL("image/jpeg",0.85),label: pdf.numPages>1?`${trim(base,8)} p${p}`:trim(base,12)});
+    }
+  }
+  const trim=(s,n)=>s.length>n?s.slice(0,n)+"…":s;
+
+  /* ── 印刷シート ── */
+  function buildPrintSheet(){
+    const widths=["4","13","7","7","9","7","10","8","9","8","8","8"];
+    const ORIG=["プラザ起点 早退手当 1,000円<br>(出発6時以前・帰社21時以降)",
+      "交通費<br>(ETC・電車他・駐車場代)",
+      "宿泊費(なし9,000/主任・班長10,000<br>/係長以上11,000円)／支払先",
+      "宿泊日当(食事)2,000円<br>1人が割勘の場合は有",
+      "ガソリン代<br>(対象車両明記)／支払先"];
+    const baseCols=["月/日","高コン番号／機械バーコード等<br>件名・出張先","出発<br>帰社","作業開始<br>終了"];
+    const tailCols=["その他<br>／支払先","その他<br>／支払先","小計(日)"];
+    const OTHER="その他<br>／支払先";
+    const pcell=(desc,amt)=>`<td><div class="two"><span class="desc">${desc}</span><span class="num">${amt?yen(amt):""}</span></div></td>`;
+    const gen=(r,key)=>pcell(esc(r[key+"Note"]), r[key]);
+
+    function rowTr(r){
+      recalc(r);
+      const allOther=isAllOther(r);
+      const plazaDesc = allOther ? esc(r.plazaNote) : esc(r._plazaCalc);
+      const lodgeNights=toNum(r.lodgingNights);
+      const lodgeDesc = allOther ? esc(r.lodgingNote)
+        : `${lodgeNights>0?lodgeNights+"泊 ":""}${esc(r.lodgingNote)}`.trim();
+      const gasDesc = allOther ? esc(r.gasNote) : `${r.gasVehicle?esc(r.gasVehicle)+" ":""}${r.gasMode==="manual"?esc(r.gasNote):esc(r.gasCalc)}`;
+      const konCell = r.konType==="カスタム"
+        ? `<div class="two"><span class="desc">${esc(r.konCustom)}</span><span></span></div>`
+        : `<div class="two"><span class="desc"><span class="konkind">${esc(konLabel(r))}</span> ${esc(r.konNo)}</span><span>${esc(r.address)}</span></div>`;
+      const col3 = allOther ? pcell(esc(r.other3Note), r.other3)
+        : `<td><div class="two"><span>出 ${esc(r.depart)}</span><span>帰 ${esc(r.ret)}</span></div></td>`;
+      const col4 = allOther ? pcell(esc(r.other4Note), r.other4)
+        : `<td><div class="two"><span>始 ${esc(r.wStart)}</span><span>終 ${esc(r.wEnd)}</span></div></td>`;
+      return `<tr>
+        <td>${allOther?"":esc(fmtDates(r))}</td>
+        <td>${konCell}</td>
+        ${col3}
+        ${col4}
+        ${pcell(plazaDesc, r.plaza)}
+        ${gen(r,"transport")}
+        ${pcell(lodgeDesc, r.lodging)}
+        ${gen(r,"perDiem")}
+        ${pcell(gasDesc, r.gas)}
+        ${pcell(esc(r.other1Note), r.other1)}
+        ${pcell(esc(r.other2Note), r.other2)}
+        <td class="num" style="font-size:12px">${yen(rowSubtotal(r))}</td>
+      </tr>`;
+    }
+    const emptyTr = `<tr>${Array.from({length:11}).map(()=>'<td><div class="two"><span class="desc"></span><span class="num"></span></div></td>').join("")}<td class="num"></td></tr>`;
+
+    function tableHtml(secRows){
+      const useOther = secRows.some(r=>isAllOther(r)); // バーコード/カスタムを含む段は費目5列＋時間2列を「その他」に
+      const cat = useOther ? [OTHER,OTHER,OTHER,OTHER,OTHER] : ORIG;
+      const headCols = useOther
+        ? ["月/日","高コン番号／機械バーコード等<br>件名・出張先",OTHER,OTHER]
+        : baseCols;
+      const cols=[...headCols, ...cat, ...tailCols];
+      let b=""; secRows.forEach(r=>{ b+=rowTr(r); });
+      for(let i=secRows.length;i<5;i++) b+=emptyTr; // 最低5行（原本に合わせる）
+      const secTotal = secRows.reduce((s,r)=>s+rowSubtotal(r),0);
+      b+=`<tr class="sub"><td colspan="11" style="text-align:right">各 合 計 金 額</td><td class="grand">¥ ${yen(secTotal)}</td></tr>`;
+      return `<table>
+        <colgroup>${widths.map(w=>`<col style="width:${w}%">`).join("")}</colgroup>
+        <thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
+        <tbody>${b}</tbody>
+      </table>`;
+    }
+
+    /* ── 段の振り分け → 1枚10件で分割 ──
+       形（型）は元のまま：上段の表(最大5行)＋下段の表(最大5行)＝1枚10件。
+       11件以上になったら、その形のまま2枚目・3枚目…へ送る。
+       ・高コンのみ／バーコードのみ：先頭から10件ずつ（上5＋下5）でページ分け
+       ・高コンとバーコード混在：上段＝高コン(5件ずつ)／下段＝その他(5件ずつ)を
+         ページごとに対にして分割（元の「高コン上・その他下」の形を維持）       */
+    const konRows   = rows.filter(r=>r.konType==="高コン番号");
+    const otherRows = rows.filter(r=>r.konType!=="高コン番号");
+    const mixed = konRows.length>0 && otherRows.length>0;
+
+    const pageDefs=[]; // {top:[...], bottom:[...]}
+    if(mixed){
+      const n=Math.max(Math.ceil(konRows.length/5), Math.ceil(otherRows.length/5), 1);
+      for(let i=0;i<n;i++) pageDefs.push({ top:konRows.slice(i*5,i*5+5), bottom:otherRows.slice(i*5,i*5+5) });
+    } else {
+      const list = konRows.length ? konRows : otherRows; // 片方のみ（0件なら空）
+      const n=Math.max(Math.ceil(list.length/10), 1);
+      for(let i=0;i<n;i++){
+        const c=list.slice(i*10, i*10+10);
+        pageDefs.push({ top:c.slice(0,5), bottom:c.slice(5,10) });
+      }
+    }
+
+    const total=pageDefs.length;
+    $("printArea").innerHTML = pageDefs.map((pg,i)=>{
+      const pageNo = total>1 ? `<span class="pa-pageno">${i+1} / ${total} ページ</span>` : "";
+      const meta = `<div class="pa-title">仮 払 い 金 精 算 書</div>
+        <div class="pa-meta">
+          <span>提出日　<span class="ln">${esc($("f_date").value||"　")}</span></span>
+          <span>氏名　<span class="ln">${esc($("f_name").value||"　")}</span></span>
+          <span>仮払い金合計　<span class="ln">¥ ${yen(grandTotal())}</span></span>
+          ${pageNo}
+        </div>`;
+      // 原本どおり常に「上段＋下段」の2表を出す（明細が少なくても下段は空表で表示）
+      // → 5行以下でも用紙が上5＋下5の10行構成で埋まり、上半分だけになるのを防ぐ
+      const body = tableHtml(pg.top) + `<div style="height:16px"></div>` + tableHtml(pg.bottom);
+      return `<div class="pa-page">${meta}${body}</div>`;
+    }).join("");
+
+    // 用紙(A4横)の印刷範囲いっぱいに行を伸ばす（10行=1枚ちょうど）。
+    // 生成PDFは上下左右8mm余白なので、その印刷範囲(281×194mm)と同じ縦横比が目標高さ。
+    // 行の高さは .two の min-height を CSS変数(--twoMin)で調整して埋める。
+    // ※ tr の height 指定は html2canvas で無視されやすいので、確実に効く min-height を使う。
+    const PAGE_H = Math.round(1480*(210-16)/(297-16)); // ≈1022px
+    const pa=$("printArea");
+    pa.style.removeProperty("--twoMin"); // 既定(34px)に戻して素の高さを測る
+    const firstPage=pa.querySelector(".pa-page");
+    if(firstPage){
+      const natural=firstPage.offsetHeight;
+      const nData=firstPage.querySelectorAll("tbody tr:not(.sub)").length || 10;
+      const deficit=PAGE_H-natural;
+      if(deficit>0){
+        const newMin=34 + deficit/nData; // 1行あたりに配分して不足分を埋める
+        pa.style.setProperty("--twoMin", newMin+"px");
+      }
+    }
+  }
+
+  /* ── PDF ── */
+  async function generatePdf(){
+    if(!jsPDF || !window.html2canvas){ toast("PDF機能を読込中です。少し待って再度お試しください"); return null; }
+    buildPrintSheet();
+    const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), m=8;
+    const pageEls=[...$("printArea").querySelectorAll(".pa-page")];
+    for(let i=0;i<pageEls.length;i++){
+      const canvas=await html2canvas(pageEls[i],{scale:2,backgroundColor:"#ffffff",useCORS:true,windowWidth:1480});
+      let iw=pw-m*2, ih=canvas.height*iw/canvas.width;
+      if(ih>ph-m*2){ ih=ph-m*2; iw=canvas.width*ih/canvas.height; }
+      if(i>0) pdf.addPage("a4","landscape");
+      pdf.addImage(canvas.toDataURL("image/jpeg",0.92),"JPEG",(pw-iw)/2,m,iw,ih);
+    }
+    for(const a of attachments){
+      const dim=await imgDim(a.dataUrl);
+      pdf.addPage("a4","portrait");
+      const PW=pdf.internal.pageSize.getWidth(), PH=pdf.internal.pageSize.getHeight();
+      pdf.setFontSize(9); pdf.setTextColor(120);
+      if(a.label) pdf.text("添付: "+a.label,8,9);
+      const mm=10, availW=PW-mm*2, availH=PH-mm*2-6;
+      let w=availW, h=dim.h*w/dim.w; if(h>availH){ h=availH; w=dim.w*h/dim.h; }
+      pdf.addImage(a.dataUrl, /^data:image\/png/.test(a.dataUrl)?"PNG":"JPEG",(PW-w)/2,14,w,h);
+    }
+    return pdf;
+  }
+  const imgDim=src=>new Promise(res=>{ const im=new Image(); im.onload=()=>res({w:im.naturalWidth,h:im.naturalHeight}); im.src=src; });
+  function baseName(){ const d=$("f_date").value||new Date().toISOString().slice(0,10); const n=$("f_name").value?("_"+$("f_name").value):""; return `立替精算書_${d}${n}`; }
+  function fileName(){ return baseName()+".pdf"; }
+
+  // 携帯は共有シート、PCはダウンロードに自動で切替（ファイルのみを渡す）
+  async function shareOrDownload(files){
+    if(navigator.canShare && navigator.canShare({files})){
+      try{ await navigator.share({files}); return "shared"; }
+      catch(e){ if(e && e.name==="AbortError") return "canceled"; }
+    }
+    files.forEach(f=>{ const url=URL.createObjectURL(f); const a=document.createElement("a"); a.href=url; a.download=f.name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),3000); });
+    return "downloaded";
+  }
+  // 保存 = 再読込できる入力データ(JSON)
+  async function doSaveData(){
+    try{
+      const name=`立替精算_data_${$("f_date").value||new Date().toISOString().slice(0,10)}.json`;
+      const file=new File([snapshot()], name, {type:"application/json"});
+      const res=await shareOrDownload([file]);
+      if(res==="downloaded") toast("データを保存しました"); else if(res==="shared") toast("データを共有しました");
+    }catch(err){ console.error(err); toast("保存に失敗しました"); }
+  }
+  // 共有 = PDFのみ
+  async function doShare(){
+    showOverlay("PDFを作成中…");
+    try{
+      const pdf=await generatePdf(); if(!pdf){ hideOverlay(); return; }
+      const pdfFile=new File([pdf.output("blob")], fileName(), {type:"application/pdf"});
+      hideOverlay();
+      const res=await shareOrDownload([pdfFile]);
+      if(res==="downloaded") toast("PDFを保存しました。LINEアプリに添付して送れます"); else if(res==="shared") toast("PDFを共有しました");
+    }catch(err){ console.error(err); toast("作成に失敗しました"); hideOverlay(); }
+  }
+  $("btnSavePdf").addEventListener("click",doSaveData);
+  $("btnLoad").addEventListener("click",()=>$("inDraft").click());
+  $("btnShare").addEventListener("click",doShare);
+  $("pvSave").addEventListener("click",doSaveData);
+  $("pvShare").addEventListener("click",doShare);
+
+  /* ── プレビュー（確認） ── */
+  async function openPreview(){
+    if(!window.html2canvas){ toast("読込中です。少し待って再度お試しください"); return; }
+    showOverlay("プレビューを作成中…");
+    try{
+      buildPrintSheet();
+      const pageEls=[...$("printArea").querySelectorAll(".pa-page")];
+      const imgs=[];
+      for(const el of pageEls){
+        const c=await html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,windowWidth:1480});
+        imgs.push(c.toDataURL("image/jpeg",0.9));
+      }
+      const atts = attachments.length
+        ? attachments.map(a=>`<div class="pv-att"><img src="${a.dataUrl}"><span>${esc(a.label||"添付")}</span></div>`).join("")
+        : `<div class="pv-empty">添付はありません</div>`;
+      const sheets = imgs.map((src,i)=>`
+        <div class="pv-label">精算書${imgs.length>1?`（${i+1} / ${imgs.length} ページ）`:""}</div>
+        <div class="pv-hint">横にスクロールで確認／シートをタップで「全体表示⇄拡大」を切替</div>
+        <div class="pv-sheetwrap"><img class="pv-sheet" src="${src}"></div>`).join("");
+      $("pvBody").innerHTML=
+        sheets +
+        `<div class="pv-label">添付書類（${attachments.length}件）</div>
+        <div class="pv-atts">${atts}</div>`;
+      $("pvBody").querySelectorAll(".pv-sheet").forEach(img=>{
+        img.addEventListener("click",()=>img.classList.toggle("fit")); // タップで全体表示⇄拡大
+      });
+      hideOverlay();
+      $("preview").classList.add("on");
+      $("pvBody").scrollTop=0;
+    }catch(err){ console.error(err); hideOverlay(); toast("プレビュー作成に失敗しました"); }
+  }
+  $("btnPreview").addEventListener("click",openPreview);
+  $("pvClose").addEventListener("click",()=>$("preview").classList.remove("on"));
+
+  /* ── 添付チェック（入れ忘れ防止） ── */
+  function neededCats(){
+    const set=new Set();
+    rows.forEach(r=>{
+      if(r.transportKind==="交通費" && toNum(r.transport)>0) set.add("交通費");
+      if(r.lodgingKind==="宿泊費" && toNum(r.lodging)>0) set.add("宿泊費");
+      if(r.gasMode==="manual" && toNum(r.gas)>0) set.add("ガソリン代");
+      const other =
+        (r.plazaKind==="その他"&&toNum(r.plaza)>0) ||
+        (r.transportKind==="その他"&&toNum(r.transport)>0) ||
+        (r.lodgingKind==="その他"&&toNum(r.lodging)>0) ||
+        (r.perDiemKind==="その他"&&toNum(r.perDiem)>0) ||
+        (r.gasMode==="その他"&&toNum(r.gas)>0) ||
+        toNum(r.other1)>0 || toNum(r.other2)>0;
+      if(other) set.add("その他");
+    });
+    return [...set];
+  }
+  function updateChecklist(){
+    const el=$("attChecklist"); if(!el) return;
+    const cats=neededCats();
+    if(!cats.length){ el.style.display="none"; el.innerHTML=""; return; }
+    el.style.display="block";
+    el.innerHTML=`<div class="chk-title">領収書の添付をお忘れなく</div>
+      <div class="chk-tags">${cats.map(c=>`<span class="chk-tag">${c}</span>`).join("")}</div>
+      <div class="chk-note">上記の費目が入力されています。該当の領収書を下のボタンから添付してください（現在 ${attachments.length} 件添付済み）</div>`;
+  }
+
+  function showOverlay(t){ $("ovText").textContent=t||"処理中…"; $("overlay").classList.add("on"); }
+  function hideOverlay(){ $("overlay").classList.remove("on"); }
+  let toastTimer=null;
+  function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("on"),2200); }
+
+  const snapshot=()=>JSON.stringify({date:$("f_date").value,name:$("f_name").value,rows,attachments,uid});
+
+  /* 入力データの一時保存（再作成用ファイル）と読み込み */
+  $("inDraft").addEventListener("change",async e=>{
+    const f=e.target.files[0]; e.target.value=""; if(!f) return;
+    try{
+      const d=JSON.parse(await f.text());
+      $("f_date").value=d.date||""; $("f_name").value=d.name||"";
+      rows=(d.rows&&d.rows.length)?d.rows.map(migrate):[newRow()];
+      attachments=d.attachments||[];
+      uid=d.uid||(Math.max(0,...rows.map(r=>r.id),...attachments.map(a=>a.id))+1);
+      renderRows(); renderAtt(); saveDraft(); toast("保存データを読み込みました");
+    }catch(err){ console.error(err); toast("読み込みに失敗しました（ファイル形式をご確認ください）"); }
+  });
+  function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveDraft,600); }
+  async function saveDraft(){ try{ if(window.storage&&window.storage.set){ await window.storage.set("rikitate:draft",snapshot(),false); flashSaved(); } }catch(e){} }
+  function flashSaved(){ const n=$("savedNote"); n.textContent="✓ 下書きを保存しました"; clearTimeout(n._t); n._t=setTimeout(()=>n.textContent="",1800); }
+  function migrate(r){
+    const base=newRow(); base.id=r.id!=null?r.id:base.id;
+    const m=Object.assign(base,r);
+    if(!Array.isArray(m.dates) || !m.dates.length){
+      m.dates = (m.date && /^\d{4}-\d{2}-\d{2}$/.test(m.date)) ? [{type:"single",d1:m.date}] : [{type:"single",d1:""}];
+    }
+    return m;
+  }
+  async function loadDraft(){
+    try{
+      if(window.storage&&window.storage.get){
+        const res=await window.storage.get("rikitate:draft");
+        if(res&&res.value){
+          const d=JSON.parse(res.value);
+          $("f_date").value=d.date||""; $("f_name").value=d.name||"";
+          rows=(d.rows&&d.rows.length)?d.rows.map(migrate):[newRow()];
+          attachments=d.attachments||[];
+          uid=d.uid||(Math.max(0,...rows.map(r=>r.id),...attachments.map(a=>a.id))+1);
+          return true;
+        }
+      }
+    }catch(e){}
+    return false;
+  }
+  $("clearBtn").addEventListener("click",async()=>{
+    if(!confirm("入力内容と添付をすべて消去します。よろしいですか？")) return;
+    try{ if(window.storage&&window.storage.delete) await window.storage.delete("rikitate:draft"); }catch(e){}
+    $("f_date").value=new Date().toISOString().slice(0,10); $("f_name").value=""; rows=[newRow()]; attachments=[]; uid=2;
+    renderRows(); renderAtt(); toast("消去しました");
+  });
+  $("f_date").addEventListener("input",scheduleSave);
+  $("f_name").addEventListener("input",scheduleSave);
+
+  (async function init(){
+    const had=await loadDraft();
+    if(!had){ $("f_date").value=new Date().toISOString().slice(0,10); rows=[newRow()]; }
+    renderRows(); renderAtt();
+  })();
+})();
+</script>
+</body>
+</html>
