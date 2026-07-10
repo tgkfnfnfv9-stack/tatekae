@@ -327,6 +327,7 @@
   ];
   const lodgeRate = lbl => (LODGE.find(x=>x.label===lbl)||LODGE[0]).rate;
   const GAS_PER_KM = 30;
+  const PER_DIEM_RATE = 2000; // 宿泊日当（食事）1日あたり
 
   let rows = [], attachments = [], uid = 1, saveTimer = null;
   const $ = id => document.getElementById(id);
@@ -361,8 +362,8 @@
       depart:"", ret:"", retNextDay:false, wStart:"", wEnd:"",
       plazaKind:"プラザ手当", plaza:"", plazaNote:"", _plazaCalc:"",
       transportKind:"交通費", transportNote:"", transport:"",
-      lodgingKind:"宿泊費", lodgingRank:"なし", lodgingNights:"0", lodgingNote:"", lodging:"", _lodgeCalc:"",
-      perDiemKind:"宿泊日当", perDiemNote:"", perDiem:"",
+      lodgingKind:"宿泊費", lodgingMode:"auto", lodgingRank:"なし", lodgingNights:"0", lodgingNote:"", lodging:"", _lodgeCalc:"",
+      perDiemKind:"宿泊日当", perDiemMode:"days", perDiemDays:"0", perDiemNote:"", perDiem:"", _perDiemCalc:"",
       gasMode:"auto", gasVehicle:"", gasOneway:"", gasTrips:"", gasNote:"", gasCalc:"", gas:"",
       other1Note:"", other1:"", other2Note:"", other2:"",
       other3Note:"", other3:"", other4Note:"", other4:"",
@@ -392,12 +393,19 @@
       r.plaza = plaza?String(plaza):"";
       r._plazaCalc = parts.length ? parts.join("・")+` ＝ ${yen(plaza)}円` : "";
     }
-    // 宿泊費（高コンのみ自動）: 肩書き単価 × 泊数
-    if(allOther){ r._lodgeCalc=""; }
+    // 宿泊費（高コン）: 自動＝肩書き単価×泊数／手動＝金額を直接入力
+    if(allOther || r.lodgingMode==="manual"){ r._lodgeCalc=""; }
     else {
       const rate=lodgeRate(r.lodgingRank), nights=toNum(r.lodgingNights), lodge=rate*nights;
       r.lodging = lodge?String(lodge):"";
       r._lodgeCalc = lodge ? `${r.lodgingRank} ${yen(rate)}円×${nights}泊` : "";
+    }
+    // 宿泊日当（高コン）: 日数選択＝1日2,000円×日数／手動＝金額を直接入力
+    if(allOther || r.perDiemMode==="manual"){ r._perDiemCalc=""; }
+    else {
+      const days=toNum(r.perDiemDays), pd=days*PER_DIEM_RATE;
+      r.perDiem = pd?String(pd):"";
+      r._perDiemCalc = pd ? `${yen(PER_DIEM_RATE)}円×${days}日＝${yen(pd)}円` : "";
     }
     // ガソリン代（高コンのみ 自動/手動）: 片道×2×回数×30円
     if(!allOther && r.gasMode==="auto"){
@@ -527,27 +535,57 @@
     return allOther ? otherInput(r,"transport","その他")
                     : fixedSlot(r,"transport","交通費","ETC・電車他・駐車場代");
   }
-  function perDiemSlot(r,allOther){
-    return allOther ? otherInput(r,"perDiem","その他")
-                    : fixedSlot(r,"perDiem","宿泊日当","(食事) 2,000円　1人が割勘の場合は有");
-  }
   function nightsOptions(sel){ let o=""; for(let i=0;i<=14;i++){ o+=`<option ${String(i)===String(sel||"0")?"selected":""}>${i}</option>`; } return o; }
   function lodgingSlot(r,allOther){
     if(allOther) return otherInput(r,"lodging","その他");
+    const mode = r.lodgingMode==="manual" ? "manual" : "auto";
+    const inner = mode==="auto"
+      ? `<div class="pair">
+           <div class="field"><label>肩書き</label>
+             <select data-id="${r.id}" data-key="lodgingRank">
+               ${LODGE.map(x=>`<option value="${x.label}" ${x.label===r.lodgingRank?"selected":""}>${x.label}（${yen(x.rate)}円）</option>`).join("")}
+             </select></div>
+           <div class="field"><label>泊数</label>
+             <select data-id="${r.id}" data-key="lodgingNights">${nightsOptions(r.lodgingNights)}</select></div>
+         </div>
+         <div class="row-label" style="margin-top:7px">宿泊先（説明欄）</div>
+         <input class="slot-note" data-id="${r.id}" data-key="lodgingNote" value="${esc(r.lodgingNote)}" placeholder="宿泊先">
+         <div class="auto-amt"><span class="a" data-calc="lodgeAmt">¥${yen(r.lodging||0)}</span><span class="n" data-calc="lodgeCalc">${esc(r._lodgeCalc||"")}</span></div>`
+      : `<div class="row-label">宿泊先（説明欄）</div>
+         <input class="slot-note" data-id="${r.id}" data-key="lodgingNote" value="${esc(r.lodgingNote)}" placeholder="宿泊先・支払先">
+         <div class="row-label" style="margin-top:7px">金額（手動入力）</div>
+         <div class="yen"><input data-id="${r.id}" data-key="lodging" inputmode="numeric" value="${esc(r.lodging)}" placeholder="0"></div>`;
     return `<div class="slot">
       <div class="slot-top"><span class="slot-fixed">宿泊費</span>
-        <span class="slot-hint">肩書き単価 × 泊数（なし9,000／主任・班長10,000／係長以上11,000円）</span></div>
-      <div class="pair">
-        <div class="field"><label>肩書き</label>
-          <select data-id="${r.id}" data-key="lodgingRank">
-            ${LODGE.map(x=>`<option value="${x.label}" ${x.label===r.lodgingRank?"selected":""}>${x.label}（${yen(x.rate)}円）</option>`).join("")}
-          </select></div>
-        <div class="field"><label>泊数</label>
-          <select data-id="${r.id}" data-key="lodgingNights">${nightsOptions(r.lodgingNights)}</select></div>
-      </div>
-      <div class="row-label" style="margin-top:7px">宿泊先（説明欄）</div>
-      <input class="slot-note" data-id="${r.id}" data-key="lodgingNote" value="${esc(r.lodgingNote)}" placeholder="宿泊先">
-      <div class="auto-amt"><span class="a" data-calc="lodgeAmt">¥${yen(r.lodging||0)}</span><span class="n" data-calc="lodgeCalc">${esc(r._lodgeCalc||"")}</span></div>
+        <select class="slot-kind" data-id="${r.id}" data-key="lodgingMode">
+          <option value="auto" ${mode==="auto"?"selected":""}>自動計算（肩書き×泊数）</option>
+          <option value="manual" ${mode==="manual"?"selected":""}>手動入力</option>
+        </select>
+        <span class="slot-hint">なし9,000／主任・班長10,000／係長以上11,000円</span></div>
+      ${inner}
+    </div>`;
+  }
+  function perDiemSlot(r,allOther){
+    if(allOther) return otherInput(r,"perDiem","その他");
+    const mode = r.perDiemMode==="manual" ? "manual" : "days";
+    const inner = mode==="days"
+      ? `<div class="field"><label>日数</label>
+           <select data-id="${r.id}" data-key="perDiemDays">${nightsOptions(r.perDiemDays)}</select></div>
+         <div class="row-label" style="margin-top:7px">説明欄（割勘の相手・備考など・任意）</div>
+         <input class="slot-note" data-id="${r.id}" data-key="perDiemNote" value="${esc(r.perDiemNote)}" placeholder="(食事) 1人が割勘の場合は有">
+         <div class="auto-amt"><span class="a" data-calc="perDiemAmt">¥${yen(r.perDiem||0)}</span><span class="n" data-calc="perDiemCalc">${esc(r._perDiemCalc||"")}</span></div>`
+      : `<div class="row-label">説明欄（上の行）</div>
+         <input class="slot-note" data-id="${r.id}" data-key="perDiemNote" value="${esc(r.perDiemNote)}" placeholder="(食事) 内容・備考">
+         <div class="row-label" style="margin-top:7px">金額欄（下の行）</div>
+         <div class="yen"><input data-id="${r.id}" data-key="perDiem" inputmode="numeric" value="${esc(r.perDiem)}" placeholder="0"></div>`;
+    return `<div class="slot">
+      <div class="slot-top"><span class="slot-fixed">宿泊日当</span>
+        <select class="slot-kind" data-id="${r.id}" data-key="perDiemMode">
+          <option value="days" ${mode==="days"?"selected":""}>日数選択（1日2,000円）</option>
+          <option value="manual" ${mode==="manual"?"selected":""}>手動入力</option>
+        </select>
+        <span class="slot-hint">(食事) 2,000円　1人が割勘の場合は有</span></div>
+      ${inner}
     </div>`;
   }
   function gasSlot(r,allOther){
@@ -593,6 +631,8 @@
     set('[data-calc="plazaCalc"]', r._plazaCalc||"条件なし");
     set('[data-calc="lodgeAmt"]', "¥"+yen(r.lodging||0));
     set('[data-calc="lodgeCalc"]', r._lodgeCalc||"");
+    set('[data-calc="perDiemAmt"]', "¥"+yen(r.perDiem||0));
+    set('[data-calc="perDiemCalc"]', r._perDiemCalc||"");
     set('[data-calc="gasAmt"]', "¥"+yen(r.gas||0));
     set('[data-calc="gasCalc"]', r.gasCalc||"");
     const rs=card.querySelector(".row-sub"); if(rs) rs.innerHTML=`<small>¥</small>${yen(rowSubtotal(r))}`;
@@ -738,7 +778,13 @@
       const plazaDesc = allOther ? esc(r.plazaNote) : esc(r._plazaCalc);
       const lodgeNights=toNum(r.lodgingNights);
       const lodgeDesc = allOther ? esc(r.lodgingNote)
-        : `${lodgeNights>0?lodgeNights+"泊 ":""}${esc(r.lodgingNote)}`.trim();
+        : (r.lodgingMode==="manual" ? esc(r.lodgingNote)
+           : `${lodgeNights>0?lodgeNights+"泊 ":""}${esc(r.lodgingNote)}`.trim());
+      const perDiemDays=toNum(r.perDiemDays);
+      const perDiemDesc = allOther ? esc(r.perDiemNote)
+        : (r.perDiemMode!=="manual" && perDiemDays>0
+           ? `${perDiemDays}日${r.perDiemNote?" "+esc(r.perDiemNote):""}`
+           : esc(r.perDiemNote));
       const gasDesc = allOther ? esc(r.gasNote) : `${r.gasVehicle?esc(r.gasVehicle)+" ":""}${r.gasMode==="manual"?esc(r.gasNote):esc(r.gasCalc)}`;
       const konCell = r.konType==="カスタム"
         ? `<div class="two"><span class="desc">${esc(r.konCustom)}</span><span></span></div>`
@@ -755,7 +801,7 @@
         ${pcell(plazaDesc, r.plaza)}
         ${gen(r,"transport")}
         ${pcell(lodgeDesc, r.lodging)}
-        ${gen(r,"perDiem")}
+        ${pcell(perDiemDesc, r.perDiem)}
         ${pcell(gasDesc, r.gas)}
         ${pcell(esc(r.other1Note), r.other1)}
         ${pcell(esc(r.other2Note), r.other2)}
@@ -871,9 +917,10 @@
   function fileName(){ return baseName()+".pdf"; }
 
   // 携帯は共有シート、PCはダウンロードに自動で切替（ファイルのみを渡す）
-  async function shareOrDownload(files){
+  async function shareOrDownload(files, opts){
     if(navigator.canShare && navigator.canShare({files})){
-      try{ await navigator.share({files}); return "shared"; }
+      // titleを添えると共有シートにLINE等の宛先が表示される（見積書と同じ挙動）
+      try{ await navigator.share(Object.assign({files}, opts||{})); return "shared"; }
       catch(e){ if(e && e.name==="AbortError") return "canceled"; }
     }
     files.forEach(f=>{ const url=URL.createObjectURL(f); const a=document.createElement("a"); a.href=url; a.download=f.name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),3000); });
@@ -884,7 +931,7 @@
     try{
       const name=`立替精算_data_${$("f_date").value||new Date().toISOString().slice(0,10)}.json`;
       const file=new File([snapshot()], name, {type:"application/json"});
-      const res=await shareOrDownload([file]);
+      const res=await shareOrDownload([file], {title:name});
       if(res==="downloaded") toast("データを保存しました"); else if(res==="shared") toast("データを共有しました");
     }catch(err){ console.error(err); toast("保存に失敗しました"); }
   }
@@ -895,7 +942,7 @@
       const pdf=await generatePdf(); if(!pdf){ hideOverlay(); return; }
       const pdfFile=new File([pdf.output("blob")], fileName(), {type:"application/pdf"});
       hideOverlay();
-      const res=await shareOrDownload([pdfFile]);
+      const res=await shareOrDownload([pdfFile], {title:fileName()});
       if(res==="downloaded") toast("PDFを保存しました。LINEアプリに添付して送れます"); else if(res==="shared") toast("PDFを共有しました");
     }catch(err){ console.error(err); toast("作成に失敗しました"); hideOverlay(); }
   }
@@ -1014,6 +1061,8 @@
     if(!Array.isArray(m.dates) || !m.dates.length){
       m.dates = (m.date && /^\d{4}-\d{2}-\d{2}$/.test(m.date)) ? [{type:"single",d1:m.date}] : [{type:"single",d1:""}];
     }
+    // 旧データ互換：宿泊日当は以前は手入力のみ。モード未設定で金額があれば手動扱いにして金額を保持
+    if(r.perDiemMode==null && r.perDiem) m.perDiemMode="manual";
     return m;
   }
   async function loadDraft(){
