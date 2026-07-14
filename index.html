@@ -931,7 +931,7 @@
     try{
       const name=`立替精算_data_${$("f_date").value||new Date().toISOString().slice(0,10)}.json`;
       const file=new File([snapshot()], name, {type:"application/json"});
-      const res=await shareOrDownload([file], {title:name});
+      const res=await shareOrDownload([file]);
       if(res==="downloaded") toast("データを保存しました"); else if(res==="shared") toast("データを共有しました");
     }catch(err){ console.error(err); toast("保存に失敗しました"); }
   }
