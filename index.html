@@ -337,8 +337,8 @@
   const OTHER_PRESETS = {
     free:  {label:"自由入力（その他）", rate:0},
     eigyo: {label:"営業・下見・納品・引取・現場売り立会", rate:1000, half:false, fromDay3:true},
-    iset:  {label:"移設", rate:3000, half:true},
-    large: {label:"大型機", rate:5000, half:true},
+    iset:  {label:"移設", rate:3000, half:true, fromDay3:true},
+    large: {label:"大型機", rate:5000, half:true, fromDay3:true},
   };
 
   let rows = [], attachments = [], uid = 1, saveTimer = null;
