@@ -702,10 +702,16 @@
   $("addRow").addEventListener("click",()=>{
     rows.forEach(r=>r.collapsed=true);
     const nr=newRow(); nr.collapsed=false;   // 追加した明細は開いた状態で
-    rows.unshift(nr);                          // 一番上に追加してすぐ編集できるように
+    rows.push(nr);                            // 並び順は従来どおり末尾に追加
     renderRows(); scheduleSave();
-    const top=$("rows").getBoundingClientRect().top+window.pageYOffset-70;
-    window.scrollTo({top:Math.max(0,top),behavior:"smooth"});
+    // 追加した明細を画面の一番上まで飛ばして、すぐ入力できるようにする
+    const card=$("rows").lastElementChild;
+    if(card){
+      const top=card.getBoundingClientRect().top+window.pageYOffset-8;
+      window.scrollTo({top:Math.max(0,top),behavior:"smooth"});
+      const first=card.querySelector('input[type="text"]');
+      if(first) setTimeout(()=>{ try{ first.focus({preventScroll:true}); }catch(_){ } },400);
+    }
   });
 
   /* ── 領収書 ── */
