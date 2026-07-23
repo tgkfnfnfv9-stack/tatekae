@@ -101,6 +101,11 @@
   .auto-amt{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:9px;padding:9px 11px;background:#f1ede3;border:1px solid var(--keisen);border-radius:8px}
   .auto-amt .a{font-size:17px;font-weight:800;color:var(--ai);font-variant-numeric:tabular-nums;white-space:nowrap}
   .auto-amt .n{font-size:10.5px;color:var(--sumi-soft);text-align:right;flex:1;line-height:1.35}
+  .seg{display:flex;width:fit-content;max-width:100%;border:1px solid var(--keisen-strong);border-radius:8px;overflow:hidden;background:#fff;margin-top:2px}
+  .seg-btn{font-family:inherit;font-size:13px;font-weight:700;padding:9px 16px;border:none;background:#fff;color:var(--sumi-soft);line-height:1;font-variant-numeric:tabular-nums}
+  .seg-btn+.seg-btn{border-left:1px solid var(--keisen)}
+  .seg-btn.on{background:var(--ai);color:#fff}
+  .seg-btn:active{transform:translateY(1px)}
 
   .del-row{margin-top:6px;width:100%;background:none;border:1px solid var(--keisen);color:var(--shu-deep);font-size:12.5px;font-weight:600;padding:9px;border-radius:8px}
   .del-row:active{background:#f1efe9}
@@ -328,6 +333,13 @@
   const lodgeRate = lbl => (LODGE.find(x=>x.label===lbl)||LODGE[0]).rate;
   const GAS_PER_KM = 30;
   const PER_DIEM_RATE = 2000; // 宿泊日当（食事）1日あたり
+  // その他 特別手当（高コンのみ）: 単価×日数
+  const OTHER_PRESETS = {
+    free:  {label:"自由入力（その他）", rate:0},
+    eigyo: {label:"営業・下見・納品・引取・現場売り立会", rate:1000, half:false, fromDay3:true},
+    iset:  {label:"移設", rate:3000, half:true},
+    large: {label:"大型機", rate:5000, half:true},
+  };
 
   let rows = [], attachments = [], uid = 1, saveTimer = null;
   const $ = id => document.getElementById(id);
@@ -365,7 +377,8 @@
       lodgingKind:"宿泊費", lodgingMode:"auto", lodgingRank:"なし", lodgingNights:"0", lodgingNote:"", lodging:"", _lodgeCalc:"",
       perDiemKind:"宿泊日当", perDiemMode:"days", perDiemDays:"0", perDiemNote:"", perDiem:"", _perDiemCalc:"",
       gasMode:"auto", gasVehicle:"", gasOneway:"", gasTrips:"", gasNote:"", gasCalc:"", gas:"",
-      other1Note:"", other1:"", other2Note:"", other2:"",
+      other1Note:"", other1:"", other1Type:"free", other1Half:false, other1Mode:"auto", other1Days:"0", _other1Calc:"",
+      other2Note:"", other2:"", other2Type:"free", other2Half:false, other2Mode:"auto", other2Days:"0", _other2Calc:"",
       other3Note:"", other3:"", other4Note:"", other4:"",
       collapsed:false };
   }
@@ -379,6 +392,34 @@
     if(r.konType==="機械バーコード") return (r.konNo||r.address?`機械バーコード ${r.konNo} ${r.address}`.trim():"未入力");
     if(r.konType==="カスタム") return ([fmtDates(r), r.konCustom].filter(Boolean).join(" ／ ")||"未入力");
     return ([fmtDates(r),(r.konNo?`[${konLabel(r)}]${r.konNo}`:""),r.address].filter(Boolean).join(" ／ ")||"未入力");
+  }
+
+  // 出張日（単日・期間）から総日数を数える
+  function dateSpanDays(dt){
+    if(!dt) return 0;
+    if(dt.type==="range"){
+      if(dt.d1 && dt.d2){ const diff=Math.round((new Date(dt.d2)-new Date(dt.d1))/86400000); return diff>=0?diff+1:1; }
+      return (dt.d1||dt.d2)?1:0;
+    }
+    return dt.d1?1:0;
+  }
+  const tripDays = r => (r.dates||[]).reduce((s,dt)=>s+dateSpanDays(dt),0);
+  const otherPreset = t => OTHER_PRESETS[t] || OTHER_PRESETS.free;
+  const otherDays = (r,key)=> (r[key+"Mode"]==="days") ? toNum(r[key+"Days"]) : tripDays(r);
+  const otherApplyDays = (r,key)=>{ const p=otherPreset(r[key+"Type"]); const d=otherDays(r,key); return p.fromDay3?Math.max(0,d-2):d; };
+  const otherUnit = (r,key)=>{ const p=otherPreset(r[key+"Type"]); return (p.half && r[key+"Half"]) ? p.rate/2 : p.rate; };
+  function otherAutoHint(r,key){
+    const p=otherPreset(r[key+"Type"]); if(!p.rate) return "";
+    const d=tripDays(r);
+    return `出張日 ${d}日 から自動算出`+(p.fromDay3?`（3日目〜＝${Math.max(0,d-2)}日分）`:"");
+  }
+  // PDF・確認用の簡潔な説明文
+  function otherDesc(r,key){
+    const t=r[key+"Type"]||"free";
+    if(isAllOther(r) || t==="free") return esc(r[key+"Note"]);
+    const p=otherPreset(t);
+    const half = p.half ? (r[key+"Half"]?"(半額)":"(満額)") : "";
+    return esc(`${p.label}${half} ${otherApplyDays(r,key)}日`);
   }
 
   function recalc(r){
@@ -415,6 +456,18 @@
     } else {
       r.gasCalc = "";
     }
+    // その他 特別手当（高コンのみ）: 単価×日数（営業…は3日目から・満額のみ）
+    ["other1","other2"].forEach(key=>{
+      const t = r[key+"Type"] || "free";
+      if(allOther || t==="free"){ r["_"+key+"Calc"]=""; return; }
+      const p=otherPreset(t);
+      const ad=otherApplyDays(r,key), unit=otherUnit(r,key), amt=ad*unit;
+      r[key] = amt?String(amt):"";
+      const half = p.half ? (r[key+"Half"]?"（半額）":"（満額）") : "";
+      r["_"+key+"Calc"] = amt
+        ? `${p.label}${half} ${yen(unit)}円×${ad}日＝${yen(amt)}円`
+        : (p.fromDay3 && tripDays(r)>0 && tripDays(r)<3 ? "3日未満のため0円" : "");
+    });
   }
 
   const rowSubtotal = r => AMT_KEYS.reduce((s,k)=>s+toNum(r[k]),0) + (isAllOther(r)?toNum(r.other3)+toNum(r.other4):0);
@@ -489,8 +542,8 @@
           ${lodgingSlot(r,allOther)}
           ${perDiemSlot(r,allOther)}
           ${gasSlot(r,allOther)}
-          ${otherSlot(r,"other1")}
-          ${otherSlot(r,"other2")}
+          ${otherSlot(r,"other1",allOther)}
+          ${otherSlot(r,"other2",allOther)}
 
           <button class="del-row" data-del="${r.id}">この明細を削除</button>
         </div>`;
@@ -614,13 +667,58 @@
       ${inner}
     </div>`;
   }
-  function otherSlot(r,key){
-    return `<div class="slot">
-      <div class="slot-top"><span class="slot-fixed">その他</span></div>
-      <div class="row-label">説明欄（上の行）</div>
+  function otherFreeInputs(r,key){
+    return `<div class="row-label" style="margin-top:7px">説明欄（上の行）</div>
       <input class="slot-note" data-id="${r.id}" data-key="${key}Note" value="${esc(r[key+"Note"])}" placeholder="内容・支払先">
       <div class="row-label">金額欄（下の行）</div>
-      <div class="yen"><input data-id="${r.id}" data-key="${key}" inputmode="numeric" value="${esc(r[key])}" placeholder="0"></div>
+      <div class="yen"><input data-id="${r.id}" data-key="${key}" inputmode="numeric" value="${esc(r[key])}" placeholder="0"></div>`;
+  }
+  function otherSlot(r,key,allOther){
+    // 機械バーコード／カスタムは従来どおり自由入力その他（種類選択なし）
+    if(allOther){
+      return `<div class="slot">
+        <div class="slot-top"><span class="slot-fixed">その他</span></div>
+        ${otherFreeInputs(r,key)}
+      </div>`;
+    }
+    // 高コン: 種類を選択できる（自由入力 or 特別手当）
+    const type = r[key+"Type"] || "free";
+    const p = otherPreset(type);
+    const typeSelect = `<select class="slot-kind" data-id="${r.id}" data-key="${key}Type">
+        ${Object.keys(OTHER_PRESETS).map(k=>`<option value="${k}" ${k===type?"selected":""}>${OTHER_PRESETS[k].label}</option>`).join("")}
+      </select>`;
+    if(type==="free"){
+      return `<div class="slot">
+        <div class="slot-top"><span class="slot-fixed">その他</span>${typeSelect}</div>
+        ${otherFreeInputs(r,key)}
+      </div>`;
+    }
+    // 特別手当（移設・大型機・営業…）
+    const half = !!r[key+"Half"];
+    const mode = r[key+"Mode"]==="days" ? "days" : "auto";
+    const halfBlock = p.half
+      ? `<div class="row-label" style="margin-top:7px">金額区分</div>
+         <div class="seg">
+           <button type="button" class="seg-btn ${!half?"on":""}" data-halfset="${r.id}:${key}:full">満額 ${yen(p.rate)}</button>
+           <button type="button" class="seg-btn ${half?"on":""}" data-halfset="${r.id}:${key}:half">半額 ${yen(p.rate/2)}</button>
+         </div>`
+      : `<div class="row-label" style="margin-top:7px">金額区分 <span class="hint">満額のみ</span></div>`;
+    const daysBlock = mode==="days"
+      ? `<div class="field" style="margin-top:5px"><label>日数</label>
+           <select data-id="${r.id}" data-key="${key}Days">${nightsOptions(r[key+"Days"])}</select></div>`
+      : `<div class="row-label" style="margin-top:5px"><span class="hint" data-calc="${key}Hint">${esc(otherAutoHint(r,key))}</span></div>`;
+    return `<div class="slot">
+      <div class="slot-top"><span class="slot-fixed">その他（特別手当）</span>
+        ${p.fromDay3?'<span class="slot-hint">単発の現場でも3日目から適用</span>':''}</div>
+      ${typeSelect}
+      ${halfBlock}
+      <div class="row-label" style="margin-top:7px">日数</div>
+      <select class="slot-kind" data-id="${r.id}" data-key="${key}Mode">
+        <option value="auto" ${mode==="auto"?"selected":""}>出張日から自動</option>
+        <option value="days" ${mode==="days"?"selected":""}>手動で日数選択</option>
+      </select>
+      ${daysBlock}
+      <div class="auto-amt"><span class="a" data-calc="${key}Amt">¥${yen(r[key]||0)}</span><span class="n" data-calc="${key}Calc">${esc(r["_"+key+"Calc"]||"")}</span></div>
     </div>`;
   }
 
@@ -635,6 +733,11 @@
     set('[data-calc="perDiemCalc"]', r._perDiemCalc||"");
     set('[data-calc="gasAmt"]', "¥"+yen(r.gas||0));
     set('[data-calc="gasCalc"]', r.gasCalc||"");
+    ["other1","other2"].forEach(key=>{
+      set(`[data-calc="${key}Amt"]`, "¥"+yen(r[key]||0));
+      set(`[data-calc="${key}Calc"]`, r["_"+key+"Calc"]||"");
+      set(`[data-calc="${key}Hint"]`, otherAutoHint(r,key));
+    });
     const rs=card.querySelector(".row-sub"); if(rs) rs.innerHTML=`<small>¥</small>${yen(rowSubtotal(r))}`;
     $("grandTotal").textContent=yen(grandTotal());
     updateChecklist();
@@ -659,9 +762,18 @@
         const r=rows.find(x=>x.id==e.target.dataset.id); if(!r||!r.dates) return;
         const di=+e.target.dataset.di;
         if(r.dates[di]) r.dates[di][e.target.dataset.dk]=e.target.value;
+        recalc(r); // 出張日から自動算出する特別手当を更新
+        refreshCalc(e.target.closest(".row-card"), r);
         scheduleSave();
       });
     });
+    // 特別手当 満額/半額トグル
+    document.querySelectorAll("[data-halfset]").forEach(b=>b.addEventListener("click",()=>{
+      const [id,key,mode]=b.dataset.halfset.split(":");
+      const r=rows.find(x=>x.id==id); if(!r) return;
+      r[key+"Half"]=(mode==="half");
+      recalc(r); renderRows(); scheduleSave();
+    }));
     document.querySelectorAll("[data-addsingle]").forEach(b=>b.addEventListener("click",()=>{
       const r=rows.find(x=>x.id==b.dataset.addsingle); if(!r) return;
       (r.dates=r.dates||[]).push({type:"single",d1:""}); renderRows(); scheduleSave();
@@ -812,8 +924,8 @@
         ${pcell(lodgeDesc, r.lodging)}
         ${pcell(perDiemDesc, r.perDiem)}
         ${pcell(gasDesc, r.gas)}
-        ${pcell(esc(r.other1Note), r.other1)}
-        ${pcell(esc(r.other2Note), r.other2)}
+        ${pcell(otherDesc(r,"other1"), r.other1)}
+        ${pcell(otherDesc(r,"other2"), r.other2)}
         <td class="num" style="font-size:12px">${yen(rowSubtotal(r))}</td>
       </tr>`;
     }
