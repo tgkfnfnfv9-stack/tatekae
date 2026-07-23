@@ -701,8 +701,11 @@
 
   $("addRow").addEventListener("click",()=>{
     rows.forEach(r=>r.collapsed=true);
-    rows.push(newRow()); renderRows(); scheduleSave();
-    window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"});
+    const nr=newRow(); nr.collapsed=false;   // 追加した明細は開いた状態で
+    rows.unshift(nr);                          // 一番上に追加してすぐ編集できるように
+    renderRows(); scheduleSave();
+    const top=$("rows").getBoundingClientRect().top+window.pageYOffset-70;
+    window.scrollTo({top:Math.max(0,top),behavior:"smooth"});
   });
 
   /* ── 領収書 ── */
