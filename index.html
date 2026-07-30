@@ -333,9 +333,8 @@
   const lodgeRate = lbl => (LODGE.find(x=>x.label===lbl)||LODGE[0]).rate;
   const GAS_PER_KM = 30;
   const PER_DIEM_RATE = 2000; // 宿泊日当（食事）1日あたり
-  // その他 特別手当（高コンのみ）: 単価×日数
+  // 特別手当（高コンのみ）: 単価×日数
   const OTHER_PRESETS = {
-    free:  {label:"自由入力（その他）", rate:0},
     eigyo: {label:"営業・下見・納品・引取・現場売り立会", rate:1000, half:false, fromDay3:true},
     iset:  {label:"移設", rate:3000, half:true, fromDay3:true},
     large: {label:"大型機", rate:5000, half:true, fromDay3:true},
@@ -404,7 +403,7 @@
     return dt.d1?1:0;
   }
   const tripDays = r => (r.dates||[]).reduce((s,dt)=>s+dateSpanDays(dt),0);
-  const otherPreset = t => OTHER_PRESETS[t] || OTHER_PRESETS.free;
+  const otherPreset = t => OTHER_PRESETS[t] || OTHER_PRESETS.eigyo;
   const otherDays = (r,key)=> (r[key+"Mode"]==="days") ? toNum(r[key+"Days"]) : tripDays(r);
   const otherApplyDays = (r,key)=>{ const p=otherPreset(r[key+"Type"]); const d=otherDays(r,key); return p.fromDay3?Math.max(0,d-2):d; };
   const otherUnit = (r,key)=>{ const p=otherPreset(r[key+"Type"]); return (p.half && r[key+"Half"]) ? p.rate/2 : p.rate; };
@@ -415,8 +414,9 @@
   }
   // PDF・確認用の簡潔な説明文
   function otherDesc(r,key){
-    const t=r[key+"Type"]||"free";
-    if(isAllOther(r) || t==="free") return esc(r[key+"Note"]);
+    if(!toNum(r[key])) return "";
+    const t=OTHER_PRESETS[r[key+"Type"]] ? r[key+"Type"] : "eigyo";
+    if(isAllOther(r)) return esc(r[key+"Note"]);
     const p=otherPreset(t);
     const half = p.half ? (r[key+"Half"]?"(半額)":"(満額)") : "";
     return esc(`${p.label}${half} ${otherApplyDays(r,key)}日`);
@@ -456,10 +456,11 @@
     } else {
       r.gasCalc = "";
     }
-    // その他 特別手当（高コンのみ）: 単価×日数（営業…は3日目から・満額のみ）
+    // 特別手当（高コンのみ）: 単価×日数（営業…は3日目から・満額のみ）
     ["other1"].forEach(key=>{
-      const t = r[key+"Type"] || "free";
-      if(allOther || t==="free"){ r["_"+key+"Calc"]=""; return; }
+      const t = OTHER_PRESETS[r[key+"Type"]] ? r[key+"Type"] : "eigyo";
+      if(allOther){ r["_"+key+"Calc"]=""; return; }
+      r[key+"Type"]=t;
       const p=otherPreset(t);
       const ad=otherApplyDays(r,key), unit=otherUnit(r,key), amt=ad*unit;
       r[key] = amt?String(amt):"";
@@ -681,18 +682,12 @@
         ${otherFreeInputs(r,key)}
       </div>`;
     }
-    // 高コン: 種類を選択できる（自由入力 or 特別手当）
-    const type = r[key+"Type"] || "free";
+    // 高コン: 特別手当の種類を選択
+    const type = OTHER_PRESETS[r[key+"Type"]] ? r[key+"Type"] : "eigyo";
     const p = otherPreset(type);
     const typeSelect = `<select class="slot-kind" data-id="${r.id}" data-key="${key}Type">
         ${Object.keys(OTHER_PRESETS).map(k=>`<option value="${k}" ${k===type?"selected":""}>${OTHER_PRESETS[k].label}</option>`).join("")}
       </select>`;
-    if(type==="free"){
-      return `<div class="slot">
-        <div class="slot-top"><span class="slot-fixed">その他</span>${typeSelect}</div>
-        ${otherFreeInputs(r,key)}
-      </div>`;
-    }
     // 特別手当（移設・大型機・営業…）
     const half = !!r[key+"Half"];
     const mode = r[key+"Mode"]==="days" ? "days" : "auto";
@@ -708,7 +703,7 @@
            <select data-id="${r.id}" data-key="${key}Days">${nightsOptions(r[key+"Days"])}</select></div>`
       : `<div class="row-label" style="margin-top:5px"><span class="hint" data-calc="${key}Hint">${esc(otherAutoHint(r,key))}</span></div>`;
     return `<div class="slot">
-      <div class="slot-top"><span class="slot-fixed">その他（特別手当）</span>
+      <div class="slot-top"><span class="slot-fixed">特別手当</span>
         ${p.fromDay3?'<span class="slot-hint">単発の現場でも3日目から適用</span>':''}</div>
       ${typeSelect}
       ${halfBlock}
@@ -888,8 +883,8 @@
       "宿泊日当(食事)2,000円<br>1人が割勘の場合は有",
       "ガソリン代<br>(対象車両明記)／支払先"];
     const baseCols=["月/日","高コン番号／機械バーコード等<br>件名・出張先","出発<br>帰社","作業開始<br>終了"];
-    const tailCols=["その他<br>／支払先","その他<br>／支払先","小計(日)"];
     const OTHER="その他<br>／支払先";
+    const specialTailCols=["特別手当",OTHER,"小計(日)"];
     const pcell=(desc,amt)=>`<td><div class="two"><span class="desc">${desc}</span><span class="num">${amt?yen(amt):""}</span></div></td>`;
     const gen=(r,key)=>pcell(esc(r[key+"Note"]), r[key]);
 
@@ -937,6 +932,7 @@
       const headCols = useOther
         ? ["月/日","高コン番号／機械バーコード等<br>件名・出張先",OTHER,OTHER]
         : baseCols;
+      const tailCols = useOther ? [OTHER,OTHER,"小計(日)"] : specialTailCols;
       const cols=[...headCols, ...cat, ...tailCols];
       let b=""; secRows.forEach(r=>{ b+=rowTr(r); });
       for(let i=secRows.length;i<5;i++) b+=emptyTr; // 最低5行（原本に合わせる）
@@ -1226,6 +1222,22 @@
     }
     ["Type","Half","Mode","Days"].forEach(suffix=>{ delete m["other2"+suffix]; });
     delete m._other2Calc;
+    // 選択式から廃止した「自由入力（その他）」は、固定の「その他」へ移して保持する
+    if(m.other1Type==="free"){
+      const freeAmount=toNum(m.other1);
+      if(freeAmount || m.other1Note){
+        m.other2Note=[m.other1Note,m.other2Note].filter(Boolean).join(" ／ ");
+        const fixedTotal=freeAmount+toNum(m.other2);
+        m.other2=fixedTotal?String(fixedTotal):"";
+      }
+      m.other1Type="eigyo";
+      m.other1Note="";
+      m.other1="";
+      m.other1Half=false;
+      m.other1Mode="auto";
+      m.other1Days="0";
+      m._other1Calc="";
+    }
     return m;
   }
   async function loadDraft(){
