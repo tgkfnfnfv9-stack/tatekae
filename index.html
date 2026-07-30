@@ -324,7 +324,7 @@
   // 日本語(CIDフォント)を描画するためのCMap・標準フォントの場所
   const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/";
 
-  const AMT_KEYS = ["plaza","transport","lodging","perDiem","gas","other1"];
+  const AMT_KEYS = ["plaza","transport","lodging","perDiem","gas","other1","other2"];
   const LODGE = [
     {label:"なし", rate:9000},
     {label:"主任・班長", rate:10000},
@@ -378,6 +378,7 @@
       perDiemKind:"宿泊日当", perDiemMode:"days", perDiemDays:"0", perDiemNote:"", perDiem:"", _perDiemCalc:"",
       gasMode:"auto", gasVehicle:"", gasOneway:"", gasTrips:"", gasNote:"", gasCalc:"", gas:"",
       other1Note:"", other1:"", other1Type:"eigyo", other1Half:false, other1Mode:"auto", other1Days:"0", _other1Calc:"",
+      other2Note:"", other2:"",
       other3Note:"", other3:"", other4Note:"", other4:"",
       collapsed:false };
   }
@@ -542,6 +543,7 @@
           ${perDiemSlot(r,allOther)}
           ${gasSlot(r,allOther)}
           ${otherSlot(r,"other1",allOther)}
+          ${otherInput(r,"other2","その他")}
 
           <button class="del-row" data-del="${r.id}">この明細を削除</button>
         </div>`;
@@ -879,14 +881,14 @@
 
   /* ── 印刷シート ── */
   function buildPrintSheet(){
-    const widths=["4","14","7","7","9","8","11","9","11","9","11"];
+    const widths=["4","13","7","7","9","7","10","8","9","8","8","8"];
     const ORIG=["プラザ起点 早退手当 1,000円<br>(出発6時以前・帰社21時以降)",
       "交通費<br>(ETC・電車他・駐車場代)",
       "宿泊費(なし9,000/主任・班長10,000<br>/係長以上11,000円)／支払先",
       "宿泊日当(食事)2,000円<br>1人が割勘の場合は有",
       "ガソリン代<br>(対象車両明記)／支払先"];
     const baseCols=["月/日","高コン番号／機械バーコード等<br>件名・出張先","出発<br>帰社","作業開始<br>終了"];
-    const tailCols=["その他<br>／支払先","小計(日)"];
+    const tailCols=["その他<br>／支払先","その他<br>／支払先","小計(日)"];
     const OTHER="その他<br>／支払先";
     const pcell=(desc,amt)=>`<td><div class="two"><span class="desc">${desc}</span><span class="num">${amt?yen(amt):""}</span></div></td>`;
     const gen=(r,key)=>pcell(esc(r[key+"Note"]), r[key]);
@@ -923,10 +925,11 @@
         ${pcell(perDiemDesc, r.perDiem)}
         ${pcell(gasDesc, r.gas)}
         ${pcell(otherDesc(r,"other1"), r.other1)}
+        ${pcell(esc(r.other2Note), r.other2)}
         <td class="num" style="font-size:12px">${yen(rowSubtotal(r))}</td>
       </tr>`;
     }
-    const emptyTr = `<tr>${Array.from({length:10}).map(()=>'<td><div class="two"><span class="desc"></span><span class="num"></span></div></td>').join("")}<td class="num"></td></tr>`;
+    const emptyTr = `<tr>${Array.from({length:11}).map(()=>'<td><div class="two"><span class="desc"></span><span class="num"></span></div></td>').join("")}<td class="num"></td></tr>`;
 
     function tableHtml(secRows){
       const useOther = secRows.some(r=>isAllOther(r)); // バーコード/カスタムを含む段は費目5列＋時間2列を「その他」に
@@ -939,8 +942,8 @@
       for(let i=secRows.length;i<5;i++) b+=emptyTr; // 最低5行（原本に合わせる）
       const secTotal = secRows.reduce((s,r)=>s+rowSubtotal(r),0);
       const amountKeys = useOther
-        ? ["other3","other4","plaza","transport","lodging","perDiem","gas","other1"]
-        : ["plaza","transport","lodging","perDiem","gas","other1"];
+        ? ["other3","other4","plaza","transport","lodging","perDiem","gas","other1","other2"]
+        : ["plaza","transport","lodging","perDiem","gas","other1","other2"];
       const amountTotals = amountKeys.map(key=>
         `<td class="num">${yen(secRows.reduce((s,r)=>s+toNum(r[key]),0))}</td>`
       ).join("");
@@ -1124,7 +1127,7 @@
         (r.lodgingKind==="その他"&&toNum(r.lodging)>0) ||
         (r.perDiemKind==="その他"&&toNum(r.perDiem)>0) ||
         (r.gasMode==="その他"&&toNum(r.gas)>0) ||
-        toNum(r.other1)>0;
+        toNum(r.other1)>0 || toNum(r.other2)>0;
       if(other) set.add("その他");
     });
     return [...set];
@@ -1198,27 +1201,30 @@
     }
     // 旧データ互換：宿泊日当は以前は手入力のみ。モード未設定で金額があれば手動扱いにして金額を保持
     if(r.perDiemMode==null && r.perDiem) m.perDiemMode="manual";
-    // 旧データ互換：2枠あった「その他」を1枠へ移行する
+    // 旧データ互換：以前の2つ目の選択式枠を、選択式1枠＋固定「その他」1枠へ移行する
     const hasOther1=hasLegacyOther(r,"other1");
-    const hasOther2=hasLegacyOther(r,"other2");
-    if(hasOther2 && !hasOther1){
-      ["Note","Type","Half","Mode","Days"].forEach(suffix=>{ m["other1"+suffix]=r["other2"+suffix]; });
-      m.other1=r.other2||"";
-      m._other1Calc=r._other2Calc||"";
-    } else if(hasOther1 && hasOther2){
-      const mergedTotal=toNum(r.other1)+toNum(r.other2);
-      m.other1Type="free";
-      m.other1Half=false;
-      m.other1Mode="auto";
-      m.other1Days="0";
-      m.other1Note=[legacyOtherLabel(r,"other1"),legacyOtherLabel(r,"other2")].filter(Boolean).join(" ／ ");
-      m.other1=mergedTotal?String(mergedTotal):"";
-      m._other1Calc="";
-    } else if(!hasOther1){
+    const legacyOther2Selectable=r.other2Type!=null;
+    let movedSpecial=false;
+    if(legacyOther2Selectable && r.other2Type!=="free"){
+      if(!hasOther1){
+        ["Note","Type","Half","Mode","Days"].forEach(suffix=>{ m["other1"+suffix]=r["other2"+suffix]; });
+        m.other1=r.other2||"";
+        m._other1Calc=r._other2Calc||"";
+        m.other2Note="";
+        m.other2="";
+        movedSpecial=true;
+      } else {
+        m.other2Note=legacyOtherLabel(r,"other2");
+        m.other2=r.other2||"";
+      }
+    } else if(legacyOther2Selectable){
+      m.other2Note=r.other2Note||"";
+      m.other2=r.other2||"";
+    }
+    if(!hasOther1 && !movedSpecial){
       m.other1Type="eigyo";
     }
-    ["Note","Type","Half","Mode","Days"].forEach(suffix=>{ delete m["other2"+suffix]; });
-    delete m.other2;
+    ["Type","Half","Mode","Days"].forEach(suffix=>{ delete m["other2"+suffix]; });
     delete m._other2Calc;
     return m;
   }
