@@ -393,24 +393,32 @@
     return ([fmtDates(r),(r.konNo?`[${konLabel(r)}]${r.konNo}`:""),r.address].filter(Boolean).join(" ／ ")||"未入力");
   }
 
-  // 出張日（単日・期間）から総日数を数える
-  function dateSpanDays(dt){
-    if(!dt) return 0;
-    if(dt.type==="range"){
-      if(dt.d1 && dt.d2){ const diff=Math.round((new Date(dt.d2)-new Date(dt.d1))/86400000); return diff>=0?diff+1:1; }
-      return (dt.d1||dt.d2)?1:0;
-    }
-    return dt.d1?1:0;
+  // 特別手当の自動計算は「期間」入力だけを対象にする（単日は合算しない）
+  function rangeElapsedDays(dt){
+    if(!dt || dt.type!=="range" || !dt.d1 || !dt.d2) return 0;
+    const diff=Math.round((new Date(dt.d2)-new Date(dt.d1))/86400000);
+    return diff>0?diff:0;
   }
-  const tripDays = r => (r.dates||[]).reduce((s,dt)=>s+dateSpanDays(dt),0);
+  const validRanges = r => (r.dates||[]).filter(dt=>rangeElapsedDays(dt)>0);
   const otherPreset = t => OTHER_PRESETS[t] || OTHER_PRESETS.eigyo;
-  const otherDays = (r,key)=> (r[key+"Mode"]==="days") ? toNum(r[key+"Days"]) : tripDays(r);
-  const otherApplyDays = (r,key)=>{ const p=otherPreset(r[key+"Type"]); const d=otherDays(r,key); return p.fromDay3?Math.max(0,d-2):d; };
+  const otherApplyDays = (r,key)=>{
+    const p=otherPreset(r[key+"Type"]);
+    if(r[key+"Mode"]==="days"){
+      const d=toNum(r[key+"Days"]);
+      return p.fromDay3?Math.max(0,d-2):d;
+    }
+    return validRanges(r).reduce((sum,dt)=>{
+      const d=rangeElapsedDays(dt);
+      return sum+(p.fromDay3?Math.max(0,d-2):d);
+    },0);
+  };
   const otherUnit = (r,key)=>{ const p=otherPreset(r[key+"Type"]); return (p.half && r[key+"Half"]) ? p.rate/2 : p.rate; };
   function otherAutoHint(r,key){
     const p=otherPreset(r[key+"Type"]); if(!p.rate) return "";
-    const d=tripDays(r);
-    return `出張日 ${d}日 から自動算出`+(p.fromDay3?`（3日目〜＝${Math.max(0,d-2)}日分）`:"");
+    const ranges=validRanges(r), applied=otherApplyDays(r,key);
+    return ranges.length
+      ? `連続期間 ${ranges.length}件から自動算出（対象 ${applied}日）`
+      : "連続期間を入力すると自動算出";
   }
   // PDF・確認用の簡潔な説明文
   function otherDesc(r,key){
@@ -467,7 +475,7 @@
       const half = p.half ? (r[key+"Half"]?"（半額）":"（満額）") : "";
       r["_"+key+"Calc"] = amt
         ? `${p.label}${half} ${yen(unit)}円×${ad}日＝${yen(amt)}円`
-        : (p.fromDay3 && tripDays(r)>0 && tripDays(r)<3 ? "3日未満のため0円" : "");
+        : (validRanges(r).length ? "連続期間の対象日数は0日" : "");
     });
   }
 
