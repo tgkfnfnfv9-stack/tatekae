@@ -948,11 +948,12 @@
       const amountKeys = useOther
         ? ["other3","other4","plaza","transport","lodging","perDiem","gas","other1","other2"]
         : ["plaza","transport","lodging","perDiem","gas","other1","other2"];
-      const amountTotals = amountKeys.map(key=>
-        `<td class="num">${yen(secRows.reduce((s,r)=>s+toNum(r[key]),0))}</td>`
-      ).join("");
+      const amountTotals = amountKeys.map(key=>{
+        const total=secRows.reduce((s,r)=>s+toNum(r[key]),0);
+        return `<td class="num">${total?yen(total):""}</td>`;
+      }).join("");
       const labelColspan = useOther ? 2 : 4;
-      b+=`<tr class="sub"><td colspan="${labelColspan}" style="text-align:left;padding-left:8px">各 合 計 金 額</td>${amountTotals}<td class="grand">¥ ${yen(secTotal)}</td></tr>`;
+      b+=`<tr class="sub"><td colspan="${labelColspan}" style="text-align:left;padding-left:8px">各 合 計 金 額</td>${amountTotals}<td class="grand">${secTotal?`¥ ${yen(secTotal)}`:""}</td></tr>`;
       return `<table>
         <colgroup>${widths.map(w=>`<col style="width:${w}%">`).join("")}</colgroup>
         <thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
