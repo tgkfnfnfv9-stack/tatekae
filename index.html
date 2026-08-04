@@ -476,11 +476,13 @@
   }
   const validRanges = r => (r.dates||[]).filter(dt=>rangeElapsedDays(dt)>0);
   const otherPreset = t => OTHER_PRESETS[t] || OTHER_PRESETS.eigyo;
+  /* testable-special-allowance:start */
+  const manualSpecialAllowanceDays = value => Math.max(0,toNum(value));
+  /* testable-special-allowance:end */
   const otherApplyDays = (r,key)=>{
     const p=otherPreset(r[key+"Type"]);
     if(r[key+"Mode"]==="days"){
-      const d=toNum(r[key+"Days"]);
-      return p.fromDay3?Math.max(0,d-2):d;
+      return manualSpecialAllowanceDays(r[key+"Days"]);
     }
     return validRanges(r).reduce((sum,dt)=>{
       const d=rangeElapsedDays(dt);
@@ -787,7 +789,7 @@
       : `<div class="row-label" style="margin-top:5px"><span class="hint" data-calc="${key}Hint">${esc(otherAutoHint(r,key))}</span></div>`;
     return `<div class="slot">
       <div class="slot-top"><span class="slot-fixed">特別手当</span>
-        ${p.fromDay3?'<span class="slot-hint">単発の現場でも3日目から適用</span>':''}</div>
+        ${mode==="days"?'<span class="slot-hint">入力した日数をそのまま計算</span>':(p.fromDay3?'<span class="slot-hint">連続期間の3日目から適用</span>':'')}</div>
       ${typeSelect}
       ${halfBlock}
       <div class="row-label" style="margin-top:7px">日数</div>
