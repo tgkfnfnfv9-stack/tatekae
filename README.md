@@ -16,4 +16,4 @@
 
 ## メモ
 - 会社サイト: https://www.kkmt.co.jp
-- PDF生成に jsPDF / html2canvas / pdf.js（CDN）を使用（オンライン必要）
+- PDF生成に jsPDF / html2canvas / pdf.js、HEIC・HEIF変換に heic-to（いずれもCDN）を使用（オンライン必要）

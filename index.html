@@ -13,6 +13,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic-to@1.5.2/dist/iife/heic-to.min.js"></script>
 <style>
   :root{
     --sumi:#1c1b19; --sumi-soft:#57534c;
@@ -304,8 +305,8 @@
   </div>
 </div>
 
-<input type="file" id="inScan" accept="image/*" capture="environment" style="display:none">
-<input type="file" id="inImg" accept="image/*" multiple style="display:none">
+<input type="file" id="inScan" accept="image/*,.heic,.heif" capture="environment" style="display:none">
+<input type="file" id="inImg" accept="image/*,.heic,.heif" multiple style="display:none">
 <input type="file" id="inPdf" accept="application/pdf" multiple style="display:none">
 <input type="file" id="inDraft" accept="application/json,.json" style="display:none">
 
@@ -346,6 +347,80 @@
   const toNum = v => { const n = parseInt(String(v).replace(/[^\d.-]/g,""),10); return isNaN(n)?0:n; };
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   const fmtMD = d => { if(!d) return ""; const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m?`${Number(m[2])}/${Number(m[3])}`:d; };
+
+  /* testable-image-helpers:start */
+  function isHeicFile(file){
+    const name=String(file&&file.name||"");
+    const type=String(file&&file.type||"").toLowerCase();
+    return /\.(heic|heif)$/i.test(name) || /^image\/hei[cf](?:-sequence)?$/.test(type);
+  }
+  function imageFormatFromDataUrl(src){
+    const m=/^data:image\/(png|jpe?g)(?:;[^,]*)?,/i.exec(String(src||""));
+    if(!m) return null;
+    return m[1].toLowerCase()==="png" ? "PNG" : "JPEG";
+  }
+  function withTimeout(promise, timeoutMs, message){
+    return new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error(message||"処理がタイムアウトしました")),timeoutMs);
+      Promise.resolve(promise).then(
+        value=>{ clearTimeout(timer); resolve(value); },
+        err=>{ clearTimeout(timer); reject(err); }
+      );
+    });
+  }
+  function blobToDataUrl(blob){
+    return new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onload=()=>resolve(reader.result);
+      reader.onerror=()=>reject(reader.error||new Error("ファイルを読み込めませんでした"));
+      reader.onabort=()=>reject(new Error("ファイルの読み込みが中断されました"));
+      reader.readAsDataURL(blob);
+    });
+  }
+  async function convertHeicToJpeg(file){
+    if(typeof window.HeicTo!=="function") throw new Error("HEIC変換機能を読み込めませんでした");
+    const converted=await withTimeout(
+      window.HeicTo({blob:file,type:"image/jpeg",quality:0.88}),
+      45000,
+      "HEIC画像の変換がタイムアウトしました"
+    );
+    const jpegBlob=new Blob([converted],{type:"image/jpeg"});
+    const dataUrl=await blobToDataUrl(jpegBlob);
+    if(imageFormatFromDataUrl(dataUrl)!=="JPEG") throw new Error("HEIC画像をJPEGへ変換できませんでした");
+    return dataUrl;
+  }
+  async function processImageFiles(files, readOne, onError=()=>{}){
+    let added=0, heicFailed=0, otherFailed=0;
+    for(const file of files){
+      try{ await readOne(file); added++; }
+      catch(err){
+        onError(err,file);
+        if(isHeicFile(file)) heicFailed++; else otherFailed++;
+      }
+    }
+    return {added,heicFailed,otherFailed};
+  }
+  function imgDim(src, timeoutMs=10000){
+    return new Promise((resolve,reject)=>{
+      const im=new Image();
+      let settled=false;
+      const finish=(fn,value)=>{
+        if(settled) return;
+        settled=true;
+        clearTimeout(timer);
+        im.onload=null; im.onerror=null;
+        fn(value);
+      };
+      const timer=setTimeout(()=>finish(reject,new Error("添付画像の読み込みがタイムアウトしました")),timeoutMs);
+      im.onload=()=>{
+        if(!im.naturalWidth||!im.naturalHeight){ finish(reject,new Error("添付画像のサイズを取得できませんでした")); return; }
+        finish(resolve,{w:im.naturalWidth,h:im.naturalHeight});
+      };
+      im.onerror=()=>finish(reject,new Error("添付画像を読み込めませんでした"));
+      im.src=src;
+    });
+  }
+  /* testable-image-helpers:end */
   function fmtDates(r){
     if(!r.dates||!r.dates.length) return "";
     return r.dates.map(dt=> dt.type==="range"
@@ -846,13 +921,50 @@
   $("btnScan").addEventListener("click",()=>$("inScan").click());
   $("btnImg").addEventListener("click",()=>$("inImg").click());
   $("btnPdf").addEventListener("click",()=>$("inPdf").click());
-  function readImage(file,label){
-    return new Promise(res=>{ const r=new FileReader(); r.onload=()=>{ attachments.push({id:uid++,dataUrl:r.result,label:label||""}); res(); }; r.readAsDataURL(file); });
+  async function readImage(file,label){
+    const dataUrl=isHeicFile(file) ? await convertHeicToJpeg(file) : await blobToDataUrl(file);
+    const format=imageFormatFromDataUrl(dataUrl);
+    if(!format) throw new Error("JPEGまたはPNG形式の画像を選択してください");
+    await imgDim(dataUrl);
+    attachments.push({id:uid++,dataUrl,label:label||""});
   }
-  async function handleImgs(files,label){ for(const f of files){ await readImage(f,label||""); } renderAtt(); scheduleSave(); }
+  async function handleImgs(files,label){
+    const hasHeic=files.some(isHeicFile);
+    if(hasHeic) showOverlay("HEIC画像をJPEGに変換中…");
+    let result;
+    try{
+      result=await processImageFiles(
+        files,
+        file=>readImage(file,label||""),
+        (err,file)=>console.error("画像の追加に失敗:",file&&file.name,err)
+      );
+    } finally {
+      if(hasHeic) hideOverlay();
+    }
+    if(result.added){ renderAtt(); scheduleSave(); }
+    return result;
+  }
 
-  $("inScan").addEventListener("change",async e=>{ if(e.target.files.length){ await handleImgs([...e.target.files],"撮影"); toast("写真を追加しました"); } e.target.value=""; });
-  $("inImg").addEventListener("change",async e=>{ if(e.target.files.length){ await handleImgs([...e.target.files],""); toast(e.target.files.length+"件の画像を追加"); } e.target.value=""; });
+  function showImageResult(result, successLabel){
+    if(result.heicFailed){
+      const prefix=result.added ? `${result.added}件追加しました。` : "";
+      toast(prefix+"このHEIC画像を読み込めませんでした。JPEGに変換して再度選択してください");
+    } else if(result.otherFailed){
+      const prefix=result.added ? `${result.added}件追加しました。` : "";
+      toast(prefix+"読み込めない画像がありました。JPEGまたはPNGを選択してください");
+    } else if(result.added){
+      toast(successLabel(result.added));
+    }
+  }
+
+  $("inScan").addEventListener("change",async e=>{
+    const files=[...e.target.files]; e.target.value="";
+    if(files.length) showImageResult(await handleImgs(files,"撮影"),()=>"写真を追加しました");
+  });
+  $("inImg").addEventListener("change",async e=>{
+    const files=[...e.target.files]; e.target.value="";
+    if(files.length) showImageResult(await handleImgs(files,""),n=>n+"件の画像を追加しました");
+  });
   $("inPdf").addEventListener("change",async e=>{
     const files=[...e.target.files]; e.target.value=""; if(!files.length) return;
     if(!window.pdfjsLib){ toast("PDF読込が利用できません"); return; }
@@ -1034,6 +1146,8 @@
       pdf.addImage(canvas.toDataURL("image/jpeg",0.92),"JPEG",(pw-iw)/2,m,iw,ih);
     }
     for(const a of attachments){
+      const format=imageFormatFromDataUrl(a.dataUrl);
+      if(!format) throw new Error("PDFに追加できない画像形式です（JPEGまたはPNGを選択してください）");
       const dim=await imgDim(a.dataUrl);
       pdf.addPage("a4","portrait");
       const PW=pdf.internal.pageSize.getWidth(), PH=pdf.internal.pageSize.getHeight();
@@ -1041,11 +1155,10 @@
       if(a.label) pdf.text("添付: "+a.label,8,9);
       const mm=10, availW=PW-mm*2, availH=PH-mm*2-6;
       let w=availW, h=dim.h*w/dim.w; if(h>availH){ h=availH; w=dim.w*h/dim.h; }
-      pdf.addImage(a.dataUrl, /^data:image\/png/.test(a.dataUrl)?"PNG":"JPEG",(PW-w)/2,14,w,h);
+      pdf.addImage(a.dataUrl,format,(PW-w)/2,14,w,h);
     }
     return pdf;
   }
-  const imgDim=src=>new Promise(res=>{ const im=new Image(); im.onload=()=>res({w:im.naturalWidth,h:im.naturalHeight}); im.src=src; });
   function baseName(){ const d=$("f_date").value||new Date().toISOString().slice(0,10); const n=$("f_name").value?("_"+$("f_name").value):""; return `立替精算書_${d}${n}`; }
   function fileName(){ return baseName()+".pdf"; }
 
