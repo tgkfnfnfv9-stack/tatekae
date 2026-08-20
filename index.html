@@ -102,6 +102,10 @@
   .auto-amt{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:9px;padding:9px 11px;background:#f1ede3;border:1px solid var(--keisen);border-radius:8px}
   .auto-amt .a{font-size:17px;font-weight:800;color:var(--ai);font-variant-numeric:tabular-nums;white-space:nowrap}
   .auto-amt .n{font-size:10.5px;color:var(--sumi-soft);text-align:right;flex:1;line-height:1.35}
+  .special-rate{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;padding:9px 11px;background:#fff7f0;border:1px solid #efd3bf;border-radius:8px}
+  .special-rate .sr-label{font-size:11px;font-weight:700;color:var(--sumi-soft);line-height:1.35}
+  .special-rate .sr-label small{display:block;font-size:9.5px;font-weight:600;color:var(--keisen-strong);margin-top:2px}
+  .special-rate .sr-value{font-size:17px;font-weight:800;color:var(--ai);font-variant-numeric:tabular-nums;white-space:nowrap}
   .seg{display:flex;width:fit-content;max-width:100%;border:1px solid var(--keisen-strong);border-radius:8px;overflow:hidden;background:#fff;margin-top:2px}
   .seg-btn{font-family:inherit;font-size:13px;font-weight:700;padding:9px 16px;border:none;background:#fff;color:var(--sumi-soft);line-height:1;font-variant-numeric:tabular-nums}
   .seg-btn+.seg-btn{border-left:1px solid var(--keisen)}
@@ -158,7 +162,7 @@
   .output-menu.on{display:flex}
   .output-panel{width:min(100%,520px);background:var(--washi);border:1px solid var(--keisen);border-radius:16px;box-shadow:0 18px 50px rgba(20,19,17,.28);padding:16px}
   .output-title{font-size:15px;font-weight:800;text-align:center;margin:0 0 4px}
-  .output-note{font-size:11px;color:var(--sumi-soft);text-align:center;margin:0 0 13px}
+  .output-note{font-size:11px;color:var(--sumi-soft);text-align:center;margin:0 0 13px;line-height:1.45}
   .output-choice{width:100%;font-family:inherit;border:1px solid var(--keisen);border-radius:11px;background:#fff;color:var(--sumi);font-size:14px;font-weight:700;padding:13px 14px;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}
   .output-choice.primary{background:var(--shu);color:#fff;border-color:var(--shu)}
   .output-choice svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2}
@@ -219,16 +223,6 @@
   #printArea .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:11px}
   #printArea .sub td{font-weight:700;font-size:11px;background:#faf8f2}
   #printArea .grand{font-size:15px;font-weight:800;text-align:right}
-
-  @media print{
-    @page{size:A4 landscape;margin:8mm}
-    html,body{background:#fff!important;margin:0!important;padding:0!important}
-    body>*:not(#printArea){display:none!important}
-    #printArea{position:static!important;left:auto!important;top:auto!important;width:auto!important;background:#fff!important}
-    #printArea .pa-page{width:281mm!important;padding:0!important;margin:0!important;break-after:page;page-break-after:always}
-    #printArea .pa-page:last-child{break-after:auto;page-break-after:auto}
-    #printArea .pa-page + .pa-page{margin-top:0!important}
-  }
 </style>
 </head>
 <body>
@@ -239,7 +233,7 @@
     <div class="head-text">
       <div class="brand">株式会社小林機械</div>
       <h1>立替精算書</h1>
-      <p>入力 → 領収書を撮影・読込 → PDFを出力・共有・印刷</p>
+      <p>入力 → 領収書を撮影・読込 → PDFを出力・共有・保存</p>
     </div>
     <button class="reset-all" id="resetTop" type="button">
       <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
@@ -321,14 +315,14 @@
 <div class="output-menu" id="outputMenu" role="dialog" aria-modal="true" aria-labelledby="outputTitle">
   <div class="output-panel">
     <div class="output-title" id="outputTitle">出力</div>
-    <p class="output-note">共有または印刷を選択してください</p>
+    <p class="output-note">共有またはPDF保存を選択してください<br>対応PCブラウザではPDFの保存先を選べます</p>
     <button class="output-choice primary" id="outputShare" type="button">
       <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
       共有
     </button>
-    <button class="output-choice" id="outputPrint" type="button">
-      <svg viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg>
-      印刷
+    <button class="output-choice" id="outputSavePdf" type="button">
+      <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 11v6M9 14l3 3 3-3"/></svg>
+      PDF保存
     </button>
     <button class="output-cancel" id="outputCancel" type="button">キャンセル</button>
   </div>
@@ -822,6 +816,10 @@
     // 特別手当（移設・大型機・営業…・手動単価）
     const half = !!r[key+"Half"];
     const mode = r[key+"Mode"]==="days" ? "days" : "auto";
+    const rateInfo = p.manual ? "" : `<div class="special-rate">
+        <span class="sr-label">1日の金額${p.fromDay3?'<small>連続期間の3日目から適用</small>':""}</span>
+        <strong class="sr-value">¥${yen(otherUnit(r,key))}</strong>
+      </div>`;
     const rateBlock = p.manual
       ? `<div class="field" style="margin-top:7px"><label>1日の金額</label>
            <div class="yen"><input data-id="${r.id}" data-key="${key}Rate" inputmode="numeric" value="${esc(r[key+"Rate"])}" placeholder="0"></div></div>`
@@ -831,7 +829,7 @@
              <button type="button" class="seg-btn ${!half?"on":""}" data-halfset="${r.id}:${key}:full">満額 ${yen(p.rate)}</button>
              <button type="button" class="seg-btn ${half?"on":""}" data-halfset="${r.id}:${key}:half">半額 ${yen(p.rate/2)}</button>
            </div>`
-        : `<div class="row-label" style="margin-top:7px">金額区分 <span class="hint">満額のみ</span></div>`);
+        : "");
     const daysBlock = mode==="days"
       ? `<div class="field" style="margin-top:5px"><label>日数</label>
            <select data-id="${r.id}" data-key="${key}Days">${nightsOptions(r[key+"Days"])}</select></div>`
@@ -843,6 +841,7 @@
       <div class="slot-top"><span class="slot-fixed">特別手当</span>
         ${topHint?`<span class="slot-hint">${topHint}</span>`:""}</div>
       ${typeSelect}
+      ${rateInfo}
       ${rateBlock}
       <div class="row-label" style="margin-top:7px">日数</div>
       <select class="slot-kind" data-id="${r.id}" data-key="${key}Mode">
@@ -1048,7 +1047,7 @@
   }
   const trim=(s,n)=>s.length>n?s.slice(0,n)+"…":s;
 
-  /* ── 印刷シート ── */
+  /* ── 印刷シート（PDF生成用） ── */
   function buildPrintSheet(){
     const widths=["4","13","7","7","9","7","10","8","9","8","8","8"];
     const ORIG=["プラザ起点 早退手当 1,000円<br>(出発6時以前・帰社21時以降)",
@@ -1166,10 +1165,9 @@
       return `<div class="pa-page">${meta}${body}</div>`;
     }).join("");
 
-    // 用紙(A4横)の印刷範囲いっぱいに行を伸ばす（10行=1枚ちょうど）。
-    // 生成PDFは上下左右8mm余白なので、その印刷範囲(281×194mm)と同じ縦横比が目標高さ。
+    // 用紙(A4横)のPDF範囲いっぱいに行を伸ばす（10行=1枚ちょうど）。
+    // 生成PDFは上下左右8mm余白なので、その範囲(281×194mm)と同じ縦横比が目標高さ。
     // 行の高さは .two の min-height を CSS変数(--twoMin)で調整して埋める。
-    // ※ tr の height 指定は html2canvas で無視されやすいので、確実に効く min-height を使う。
     const PAGE_H = Math.round(1480*(210-16)/(297-16)); // ≈1022px
     const pa=$("printArea");
     pa.style.removeProperty("--twoMin"); // 既定(34px)に戻して素の高さを測る
@@ -1248,12 +1246,46 @@
   }
   function openOutputMenu(){ $("outputMenu").classList.add("on"); }
   function closeOutputMenu(){ $("outputMenu").classList.remove("on"); }
-  function doPrint(){
-    closeOutputMenu();
+  function downloadPdfBlob(blob,name){
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=name; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),3000);
+  }
+  async function choosePdfSaveHandle(name){
+    if(typeof window.showSaveFilePicker!=="function") return null;
     try{
-      buildPrintSheet();
-      requestAnimationFrame(()=>window.print());
-    }catch(err){ console.error(err); toast("印刷画面を開けませんでした"); }
+      return await window.showSaveFilePicker({
+        suggestedName:name,
+        types:[{description:"PDFファイル",accept:{"application/pdf":[".pdf"]}}]
+      });
+    }catch(err){
+      if(err && err.name==="AbortError") return false;
+      throw err;
+    }
+  }
+  async function doSavePdf(){
+    closeOutputMenu();
+    let handle=null;
+    try{
+      // 保存先選択はユーザー操作直後に開く必要があるため、PDF生成より先に実行する
+      handle=await choosePdfSaveHandle(fileName());
+      if(handle===false) return;
+      showOverlay("PDFを作成中…");
+      const pdf=await generatePdf(); if(!pdf){ hideOverlay(); return; }
+      const blob=pdf.output("blob");
+      if(handle){
+        const writable=await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        hideOverlay();
+        toast("PDFを指定した場所に保存しました");
+      } else {
+        downloadPdfBlob(blob,fileName());
+        hideOverlay();
+        toast("PDFを保存しました");
+      }
+    }catch(err){ console.error(err); hideOverlay(); toast("PDFの保存に失敗しました"); }
   }
   $("btnSavePdf").addEventListener("click",doSaveData);
   $("btnLoad").addEventListener("click",()=>$("inDraft").click());
@@ -1261,7 +1293,7 @@
   $("pvSave").addEventListener("click",doSaveData);
   $("pvShare").addEventListener("click",openOutputMenu);
   $("outputShare").addEventListener("click",()=>{ closeOutputMenu(); doShare(); });
-  $("outputPrint").addEventListener("click",doPrint);
+  $("outputSavePdf").addEventListener("click",doSavePdf);
   $("outputCancel").addEventListener("click",closeOutputMenu);
   $("outputMenu").addEventListener("click",e=>{ if(e.target===$("outputMenu")) closeOutputMenu(); });
   document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeOutputMenu(); });
