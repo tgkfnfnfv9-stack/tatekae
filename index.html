@@ -153,6 +153,18 @@
   .btn-save{background:var(--washi);color:var(--ai);border:1.5px solid var(--ai)}
   .btn-share{background:var(--shu);color:#fff;box-shadow:0 4px 14px rgba(20,19,17,.28)}
 
+  /* 出力メニュー */
+  .output-menu{position:fixed;inset:0;z-index:260;background:rgba(20,19,17,.48);display:none;align-items:flex-end;justify-content:center;padding:18px 14px calc(18px + var(--barClear))}
+  .output-menu.on{display:flex}
+  .output-panel{width:min(100%,520px);background:var(--washi);border:1px solid var(--keisen);border-radius:16px;box-shadow:0 18px 50px rgba(20,19,17,.28);padding:16px}
+  .output-title{font-size:15px;font-weight:800;text-align:center;margin:0 0 4px}
+  .output-note{font-size:11px;color:var(--sumi-soft);text-align:center;margin:0 0 13px}
+  .output-choice{width:100%;font-family:inherit;border:1px solid var(--keisen);border-radius:11px;background:#fff;color:var(--sumi);font-size:14px;font-weight:700;padding:13px 14px;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}
+  .output-choice.primary{background:var(--shu);color:#fff;border-color:var(--shu)}
+  .output-choice svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2}
+  .output-cancel{width:100%;font-family:inherit;border:none;background:none;color:var(--sumi-soft);font-size:13px;font-weight:700;padding:12px 8px 4px;margin-top:4px}
+  @media (min-width:700px){.output-menu{align-items:center}.output-panel{padding:18px}}
+
   /* 添付チェック */
   .chk{background:#fbeeec;border:1px solid #eccbc6;border-radius:10px;padding:11px 12px;margin-bottom:12px}
   .chk-title{font-size:12.5px;font-weight:800;color:var(--shu-deep);display:flex;align-items:center;gap:6px}
@@ -207,6 +219,16 @@
   #printArea .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:11px}
   #printArea .sub td{font-weight:700;font-size:11px;background:#faf8f2}
   #printArea .grand{font-size:15px;font-weight:800;text-align:right}
+
+  @media print{
+    @page{size:A4 landscape;margin:8mm}
+    html,body{background:#fff!important;margin:0!important;padding:0!important}
+    body>*:not(#printArea){display:none!important}
+    #printArea{position:static!important;left:auto!important;top:auto!important;width:auto!important;background:#fff!important}
+    #printArea .pa-page{width:281mm!important;padding:0!important;margin:0!important;break-after:page;page-break-after:always}
+    #printArea .pa-page:last-child{break-after:auto;page-break-after:auto}
+    #printArea .pa-page + .pa-page{margin-top:0!important}
+  }
 </style>
 </head>
 <body>
@@ -217,7 +239,7 @@
     <div class="head-text">
       <div class="brand">株式会社小林機械</div>
       <h1>立替精算書</h1>
-      <p>入力 → 領収書を撮影・読込 → PDFで保存・共有</p>
+      <p>入力 → 領収書を撮影・読込 → PDFを出力・共有・印刷</p>
     </div>
     <button class="reset-all" id="resetTop" type="button">
       <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
@@ -291,9 +313,25 @@
     読込
   </button>
   <button class="btn btn-share" id="btnShare">
-    <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
-    共有
+    <svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 13v6h14v-6"/></svg>
+    出力
   </button>
+</div>
+
+<div class="output-menu" id="outputMenu" role="dialog" aria-modal="true" aria-labelledby="outputTitle">
+  <div class="output-panel">
+    <div class="output-title" id="outputTitle">出力</div>
+    <p class="output-note">共有または印刷を選択してください</p>
+    <button class="output-choice primary" id="outputShare" type="button">
+      <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+      共有
+    </button>
+    <button class="output-choice" id="outputPrint" type="button">
+      <svg viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg>
+      印刷
+    </button>
+    <button class="output-cancel" id="outputCancel" type="button">キャンセル</button>
+  </div>
 </div>
 
 <div class="pv" id="preview">
@@ -301,7 +339,7 @@
   <div class="pv-body" id="pvBody"></div>
   <div class="pv-foot">
     <button class="btn btn-save" id="pvSave">保存（データ）</button>
-    <button class="btn btn-share" id="pvShare">共有（PDF）</button>
+    <button class="btn btn-share" id="pvShare">出力（PDF）</button>
   </div>
 </div>
 
@@ -336,9 +374,10 @@
   const PER_DIEM_RATE = 2000; // 宿泊日当（食事）1日あたり
   // 特別手当（高コンのみ）: 単価×日数
   const OTHER_PRESETS = {
-    eigyo: {label:"営業・下見・納品・引取・現場売り立会", rate:1000, half:false, fromDay3:true},
-    iset:  {label:"移設", rate:3000, half:true, fromDay3:true},
-    large: {label:"大型機", rate:5000, half:true, fromDay3:true},
+    eigyo:  {label:"営業・下見・納品・引取・現場売り立会", rate:1000, half:false, fromDay3:true},
+    iset:   {label:"移設", rate:3000, half:true, fromDay3:true},
+    large:  {label:"大型機", rate:5000, half:true, fromDay3:true},
+    manual: {label:"手動入力", rate:0, half:false, fromDay3:false, manual:true},
   };
 
   let rows = [], attachments = [], uid = 1, saveTimer = null;
@@ -451,7 +490,7 @@
       lodgingKind:"宿泊費", lodgingMode:"auto", lodgingRank:"なし", lodgingNights:"0", lodgingNote:"", lodging:"", _lodgeCalc:"",
       perDiemKind:"宿泊日当", perDiemMode:"days", perDiemDays:"0", perDiemNote:"", perDiem:"", _perDiemCalc:"",
       gasMode:"auto", gasVehicle:"", gasOneway:"", gasTrips:"", gasNote:"", gasCalc:"", gas:"",
-      other1Note:"", other1:"", other1Type:"eigyo", other1Half:false, other1Mode:"auto", other1Days:"0", _other1Calc:"",
+      other1Note:"", other1:"", other1Type:"eigyo", other1Rate:"", other1Half:false, other1Mode:"auto", other1Days:"0", _other1Calc:"",
       other2Note:"", other2:"",
       other3Note:"", other3:"", other4Note:"", other4:"",
       collapsed:false };
@@ -478,6 +517,7 @@
   const otherPreset = t => OTHER_PRESETS[t] || OTHER_PRESETS.eigyo;
   /* testable-special-allowance:start */
   const manualSpecialAllowanceDays = value => Math.max(0,toNum(value));
+  const manualSpecialAllowanceRate = value => Math.max(0,toNum(value));
   /* testable-special-allowance:end */
   const otherApplyDays = (r,key)=>{
     const p=otherPreset(r[key+"Type"]);
@@ -489,9 +529,13 @@
       return sum+(p.fromDay3?Math.max(0,d-2):d);
     },0);
   };
-  const otherUnit = (r,key)=>{ const p=otherPreset(r[key+"Type"]); return (p.half && r[key+"Half"]) ? p.rate/2 : p.rate; };
+  const otherUnit = (r,key)=>{
+    const p=otherPreset(r[key+"Type"]);
+    if(p.manual) return manualSpecialAllowanceRate(r[key+"Rate"]);
+    return (p.half && r[key+"Half"]) ? p.rate/2 : p.rate;
+  };
   function otherAutoHint(r,key){
-    const p=otherPreset(r[key+"Type"]); if(!p.rate) return "";
+    const p=otherPreset(r[key+"Type"]); if(!p.manual && !p.rate) return "";
     const ranges=validRanges(r), applied=otherApplyDays(r,key);
     return ranges.length
       ? `連続期間 ${ranges.length}件から自動算出（対象 ${applied}日）`
@@ -503,6 +547,8 @@
     const t=OTHER_PRESETS[r[key+"Type"]] ? r[key+"Type"] : "eigyo";
     if(isAllOther(r)) return esc(r[key+"Note"]);
     const p=otherPreset(t);
+    const unit=otherUnit(r,key);
+    if(p.manual) return esc(`${p.label} ${yen(unit)}円×${otherApplyDays(r,key)}日`);
     const half = p.half ? (r[key+"Half"]?"(半額)":"(満額)") : "";
     return esc(`${p.label}${half} ${otherApplyDays(r,key)}日`);
   }
@@ -541,7 +587,7 @@
     } else {
       r.gasCalc = "";
     }
-    // 特別手当（高コンのみ）: 単価×日数（営業…は3日目から・満額のみ）
+    // 特別手当（高コンのみ）: 単価×日数
     ["other1"].forEach(key=>{
       const t = OTHER_PRESETS[r[key+"Type"]] ? r[key+"Type"] : "eigyo";
       if(allOther){ r["_"+key+"Calc"]=""; return; }
@@ -552,7 +598,7 @@
       const half = p.half ? (r[key+"Half"]?"（半額）":"（満額）") : "";
       r["_"+key+"Calc"] = amt
         ? `${p.label}${half} ${yen(unit)}円×${ad}日＝${yen(amt)}円`
-        : (validRanges(r).length ? "連続期間の対象日数は0日" : "");
+        : (p.manual && !unit ? "1日の金額を入力してください" : (validRanges(r).length ? "連続期間の対象日数は0日" : ""));
     });
   }
 
@@ -773,25 +819,31 @@
     const typeSelect = `<select class="slot-kind" data-id="${r.id}" data-key="${key}Type">
         ${Object.keys(OTHER_PRESETS).map(k=>`<option value="${k}" ${k===type?"selected":""}>${OTHER_PRESETS[k].label}</option>`).join("")}
       </select>`;
-    // 特別手当（移設・大型機・営業…）
+    // 特別手当（移設・大型機・営業…・手動単価）
     const half = !!r[key+"Half"];
     const mode = r[key+"Mode"]==="days" ? "days" : "auto";
-    const halfBlock = p.half
-      ? `<div class="row-label" style="margin-top:7px">金額区分</div>
-         <div class="seg">
-           <button type="button" class="seg-btn ${!half?"on":""}" data-halfset="${r.id}:${key}:full">満額 ${yen(p.rate)}</button>
-           <button type="button" class="seg-btn ${half?"on":""}" data-halfset="${r.id}:${key}:half">半額 ${yen(p.rate/2)}</button>
-         </div>`
-      : `<div class="row-label" style="margin-top:7px">金額区分 <span class="hint">満額のみ</span></div>`;
+    const rateBlock = p.manual
+      ? `<div class="field" style="margin-top:7px"><label>1日の金額</label>
+           <div class="yen"><input data-id="${r.id}" data-key="${key}Rate" inputmode="numeric" value="${esc(r[key+"Rate"])}" placeholder="0"></div></div>`
+      : (p.half
+        ? `<div class="row-label" style="margin-top:7px">金額区分</div>
+           <div class="seg">
+             <button type="button" class="seg-btn ${!half?"on":""}" data-halfset="${r.id}:${key}:full">満額 ${yen(p.rate)}</button>
+             <button type="button" class="seg-btn ${half?"on":""}" data-halfset="${r.id}:${key}:half">半額 ${yen(p.rate/2)}</button>
+           </div>`
+        : `<div class="row-label" style="margin-top:7px">金額区分 <span class="hint">満額のみ</span></div>`);
     const daysBlock = mode==="days"
       ? `<div class="field" style="margin-top:5px"><label>日数</label>
            <select data-id="${r.id}" data-key="${key}Days">${nightsOptions(r[key+"Days"])}</select></div>`
       : `<div class="row-label" style="margin-top:5px"><span class="hint" data-calc="${key}Hint">${esc(otherAutoHint(r,key))}</span></div>`;
+    const topHint = mode==="days"
+      ? "入力した日数をそのまま計算"
+      : (p.manual ? "出張日から日数を自動取得" : (p.fromDay3 ? "連続期間の3日目から適用" : ""));
     return `<div class="slot">
       <div class="slot-top"><span class="slot-fixed">特別手当</span>
-        ${mode==="days"?'<span class="slot-hint">入力した日数をそのまま計算</span>':(p.fromDay3?'<span class="slot-hint">連続期間の3日目から適用</span>':'')}</div>
+        ${topHint?`<span class="slot-hint">${topHint}</span>`:""}</div>
       ${typeSelect}
-      ${halfBlock}
+      ${rateBlock}
       <div class="row-label" style="margin-top:7px">日数</div>
       <select class="slot-kind" data-id="${r.id}" data-key="${key}Mode">
         <option value="auto" ${mode==="auto"?"selected":""}>出張日から自動</option>
@@ -1194,11 +1246,25 @@
       if(res==="downloaded") toast("PDFを保存しました。LINEアプリに添付して送れます"); else if(res==="shared") toast("PDFを共有しました");
     }catch(err){ console.error(err); toast("作成に失敗しました"); hideOverlay(); }
   }
+  function openOutputMenu(){ $("outputMenu").classList.add("on"); }
+  function closeOutputMenu(){ $("outputMenu").classList.remove("on"); }
+  function doPrint(){
+    closeOutputMenu();
+    try{
+      buildPrintSheet();
+      requestAnimationFrame(()=>window.print());
+    }catch(err){ console.error(err); toast("印刷画面を開けませんでした"); }
+  }
   $("btnSavePdf").addEventListener("click",doSaveData);
   $("btnLoad").addEventListener("click",()=>$("inDraft").click());
-  $("btnShare").addEventListener("click",doShare);
+  $("btnShare").addEventListener("click",openOutputMenu);
   $("pvSave").addEventListener("click",doSaveData);
-  $("pvShare").addEventListener("click",doShare);
+  $("pvShare").addEventListener("click",openOutputMenu);
+  $("outputShare").addEventListener("click",()=>{ closeOutputMenu(); doShare(); });
+  $("outputPrint").addEventListener("click",doPrint);
+  $("outputCancel").addEventListener("click",closeOutputMenu);
+  $("outputMenu").addEventListener("click",e=>{ if(e.target===$("outputMenu")) closeOutputMenu(); });
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeOutputMenu(); });
 
   /* ── プレビュー（確認） ── */
   async function openPreview(){
@@ -1327,7 +1393,7 @@
     let movedSpecial=false;
     if(legacyOther2Selectable && r.other2Type!=="free"){
       if(!hasOther1){
-        ["Note","Type","Half","Mode","Days"].forEach(suffix=>{ m["other1"+suffix]=r["other2"+suffix]; });
+        ["Note","Type","Rate","Half","Mode","Days"].forEach(suffix=>{ m["other1"+suffix]=r["other2"+suffix]; });
         m.other1=r.other2||"";
         m._other1Calc=r._other2Calc||"";
         m.other2Note="";
@@ -1344,7 +1410,7 @@
     if(!hasOther1 && !movedSpecial){
       m.other1Type="eigyo";
     }
-    ["Type","Half","Mode","Days"].forEach(suffix=>{ delete m["other2"+suffix]; });
+    ["Type","Rate","Half","Mode","Days"].forEach(suffix=>{ delete m["other2"+suffix]; });
     delete m._other2Calc;
     // 選択式から廃止した「自由入力（その他）」は、固定の「その他」へ移して保持する
     if(m.other1Type==="free"){
@@ -1357,6 +1423,7 @@
       m.other1Type="eigyo";
       m.other1Note="";
       m.other1="";
+      m.other1Rate="";
       m.other1Half=false;
       m.other1Mode="auto";
       m.other1Days="0";
