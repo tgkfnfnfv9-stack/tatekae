@@ -51,3 +51,14 @@ test("手動入力では1日の金額欄と日数モードを表示する", () =
   assert.match(html, />手動で日数選択<\/option>/);
   assert.match(html, /入力した日数をそのまま計算/);
 });
+
+test("プリセット選択時は現在の1日単価を画面に表示する", () => {
+  assert.match(html, /class="special-rate"/);
+  assert.match(html, /class="sr-label">1日の金額/);
+  assert.match(html, /class="sr-value">¥\$\{yen\(otherUnit\(r,key\)\)\}/);
+  assert.match(html, /連続期間の3日目から適用/);
+});
+
+test("営業プリセットの1日単価は1000円を維持する", () => {
+  assert.match(html, /eigyo:\s*\{label:"営業・下見・納品・引取・現場売り立会", rate:1000, half:false, fromDay3:true\}/);
+});
