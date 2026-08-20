@@ -15,9 +15,10 @@ vm.runInContext(`
   };
   ${match[1]}
   this.manualSpecialAllowanceDays = manualSpecialAllowanceDays;
+  this.manualSpecialAllowanceRate = manualSpecialAllowanceRate;
 `, context);
 
-const { manualSpecialAllowanceDays } = context;
+const { manualSpecialAllowanceDays, manualSpecialAllowanceRate } = context;
 
 test("特別手当の手動日数は入力値をそのまま使う", () => {
   assert.equal(manualSpecialAllowanceDays("4"), 4);
@@ -31,10 +32,22 @@ test("手動日数には自動計算用の3日目ルールを適用しない", (
   assert.equal(manualSpecialAllowanceDays("2") * rate, 2000);
 });
 
-test("自動計算の3日目ルールは維持する", () => {
-  assert.match(html, /return sum\+\(p\.fromDay3\?Math\.max\(0,d-2\):d\)/);
+test("手動入力の1日単価をそのまま計算に使える", () => {
+  assert.equal(manualSpecialAllowanceRate("5000"), 5000);
+  assert.equal(manualSpecialAllowanceRate("¥ 7,500"), 7500);
+  assert.equal(manualSpecialAllowanceRate("-1000"), 0);
+  assert.equal(manualSpecialAllowanceRate("5000") * manualSpecialAllowanceDays("4"), 20000);
 });
 
-test("手動選択時の説明は入力日数をそのまま計算と表示する", () => {
+test("自動計算の3日目ルールは既存プリセットで維持する", () => {
+  assert.match(html, /return sum\+\(p\.fromDay3\?Math\.max\(0,d-2\):d\)/);
+  assert.match(html, /manual:\s*\{label:"手動入力", rate:0, half:false, fromDay3:false, manual:true\}/);
+});
+
+test("手動入力では1日の金額欄と日数モードを表示する", () => {
+  assert.match(html, /<label>1日の金額<\/label>/);
+  assert.match(html, /data-key="\$\{key\}Rate"/);
+  assert.match(html, />出張日から自動<\/option>/);
+  assert.match(html, />手動で日数選択<\/option>/);
   assert.match(html, /入力した日数をそのまま計算/);
 });
