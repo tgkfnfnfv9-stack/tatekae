@@ -8,19 +8,34 @@ test("下部の共有ボタン表示を出力に変更する", () => {
   assert.match(html, /id="btnShare"[\s\S]*?出力\s*<\/button>/);
 });
 
-test("出力メニューに共有と印刷を表示する", () => {
+test("出力メニューに共有とPDF保存を表示する", () => {
   assert.match(html, /id="outputMenu"/);
   assert.match(html, /id="outputShare"[\s\S]*?共有\s*<\/button>/);
-  assert.match(html, /id="outputPrint"[\s\S]*?印刷\s*<\/button>/);
+  assert.match(html, /id="outputSavePdf"[\s\S]*?PDF保存\s*<\/button>/);
+  assert.doesNotMatch(html, /id="outputPrint"/);
 });
 
-test("印刷はブラウザの印刷機能を使用する", () => {
-  assert.match(html, /function doPrint\(\)[\s\S]*?buildPrintSheet\(\);[\s\S]*?window\.print\(\)/);
-  assert.match(html, /@media print/);
-  assert.match(html, /@page\{size:A4 landscape;margin:8mm\}/);
+test("PDF保存は対応ブラウザで保存先選択を使用する", () => {
+  assert.match(html, /window\.showSaveFilePicker/);
+  assert.match(html, /suggestedName:name/);
+  assert.match(html, /accept:\{"application\/pdf":\["\.pdf"\]\}/);
+  assert.match(html, /handle\.createWritable\(\)/);
+  assert.match(html, /writable\.write\(blob\)/);
+  assert.match(html, /writable\.close\(\)/);
+});
+
+test("保存先選択非対応ブラウザではPDFダウンロードへフォールバックする", () => {
+  assert.match(html, /function downloadPdfBlob\(blob,name\)/);
+  assert.match(html, /a\.download=name/);
+  assert.match(html, /if\(typeof window\.showSaveFilePicker!=="function"\) return null/);
 });
 
 test("共有は従来のPDF共有処理を呼び出す", () => {
   assert.match(html, /id="outputShare"/);
   assert.match(html, /\$\("outputShare"\)\.addEventListener\("click",\(\)=>\{ closeOutputMenu\(\); doShare\(\); \}\)/);
+});
+
+test("出力メニューからブラウザ印刷は呼び出さない", () => {
+  assert.doesNotMatch(html, /window\.print\(\)/);
+  assert.doesNotMatch(html, />印刷\s*<\/button>/);
 });
