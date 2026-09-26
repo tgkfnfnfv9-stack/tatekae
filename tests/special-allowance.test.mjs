@@ -62,3 +62,48 @@ test("プリセット選択時は現在の1日単価を画面に表示する", (
 test("営業プリセットの1日単価は1000円を維持する", () => {
   assert.match(html, /eigyo:\s*\{label:"営業・下見・納品・引取・現場売り立会", rate:1000, half:false, fromDay3:true\}/);
 });
+
+test("新規明細は手動0日、保存済みの計算方式と日数はそのまま復元する", () => {
+  const newRowSource = html.match(/  function newRow\(\)\{[\s\S]*?\n  \}/)?.[0];
+  const migrateSource = html.match(/  function migrate\(r\)\{[\s\S]*?\n  \}/)?.[0];
+  assert.ok(newRowSource);
+  assert.ok(migrateSource);
+  const state = vm.createContext({});
+  vm.runInContext(`
+    let uid=1;
+    const hasLegacyOther=r=>r.other1Type!=null;
+    ${newRowSource}
+    ${migrateSource}
+    this.newRow=newRow;
+    this.migrate=migrate;
+  `, state);
+
+  assert.equal(state.newRow().other1Mode, "days");
+  assert.equal(state.newRow().other1Days, "0");
+  for (const [mode, days] of [["auto", "4"], ["days", "3"]]) {
+    const restored = state.migrate({ id: 10, other1Mode: mode, other1Days: days });
+    assert.equal(restored.other1Mode, mode);
+    assert.equal(restored.other1Days, days);
+  }
+  assert.equal(state.migrate({ id: 10 }).other1Mode, "auto");
+  const moved = state.migrate({ id: 10, other2Type: "eigyo", other2Mode: "days", other2Days: "5" });
+  assert.equal(moved.other1Mode, "days");
+  assert.equal(moved.other1Days, "5");
+});
+
+test("自動計算へ切り替えても期間から日数を計算できる", () => {
+  const source = html.match(/  const otherApplyDays = \(r,key\)=>\{[\s\S]*?\n  \};/)?.[0];
+  assert.ok(source);
+  const state = vm.createContext({ manualSpecialAllowanceDays });
+  vm.runInContext(`
+    const otherPreset=()=>({fromDay3:true});
+    const rangeElapsedDays=dt=>dt.days;
+    const validRanges=r=>r.dates;
+    ${source}
+    this.otherApplyDays=otherApplyDays;
+  `, state);
+  const row = { other1Mode: "days", other1Days: "4", dates: [{days: 4}] };
+  assert.equal(state.otherApplyDays(row, "other1"), 4);
+  row.other1Mode = "auto";
+  assert.equal(state.otherApplyDays(row, "other1"), 2);
+});

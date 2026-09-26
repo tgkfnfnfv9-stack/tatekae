@@ -484,7 +484,7 @@
       lodgingKind:"宿泊費", lodgingMode:"auto", lodgingRank:"なし", lodgingNights:"0", lodgingNote:"", lodging:"", _lodgeCalc:"",
       perDiemKind:"宿泊日当", perDiemMode:"days", perDiemDays:"0", perDiemNote:"", perDiem:"", _perDiemCalc:"",
       gasMode:"auto", gasVehicle:"", gasOneway:"", gasTrips:"", gasNote:"", gasCalc:"", gas:"",
-      other1Note:"", other1:"", other1Type:"eigyo", other1Rate:"", other1Half:false, other1Mode:"auto", other1Days:"0", _other1Calc:"",
+      other1Note:"", other1:"", other1Type:"eigyo", other1Rate:"", other1Half:false, other1Mode:"days", other1Days:"0", _other1Calc:"",
       other2Note:"", other2:"",
       other3Note:"", other3:"", other4Note:"", other4:"",
       collapsed:false };
@@ -1439,6 +1439,8 @@
       m.other2Note=r.other2Note||"";
       m.other2=r.other2||"";
     }
+    // 計算方式を保存していない旧データは、従来の自動計算として復元する
+    if(r.other1Mode==null && (!movedSpecial || r.other2Mode==null)) m.other1Mode="auto";
     if(!hasOther1 && !movedSpecial){
       m.other1Type="eigyo";
     }
