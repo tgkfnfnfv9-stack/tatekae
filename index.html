@@ -375,11 +375,16 @@
   };
 
   let rows = [], attachments = [], uid = 1, saveTimer = null;
+  let draftWrite=Promise.resolve(), draftVersion=0, loadVersion=0;
   const $ = id => document.getElementById(id);
   const yen = n => (Number(n)||0).toLocaleString("ja-JP");
   const toNum = v => { const n = parseInt(String(v).replace(/[^\d.-]/g,""),10); return isNaN(n)?0:n; };
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   const fmtMD = d => { if(!d) return ""; const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m?`${Number(m[2])}/${Number(m[3])}`:d; };
+  const today = () => {
+    const d=new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
 
   /* testable-image-helpers:start */
   function isHeicFile(file){
@@ -870,6 +875,7 @@
       set(`[data-calc="${key}Hint"]`, otherAutoHint(r,key));
     });
     const rs=card.querySelector(".row-sub"); if(rs) rs.innerHTML=`<small>¥</small>${yen(rowSubtotal(r))}`;
+    set(".rh-sub", subLineOf(r));
     $("grandTotal").textContent=yen(grandTotal());
     updateChecklist();
   }
@@ -889,14 +895,16 @@
     });
     // 出張日（単日／期間）
     document.querySelectorAll("#rows [data-dk]").forEach(el=>{
-      el.addEventListener("change",e=>{
+      const handler=e=>{
         const r=rows.find(x=>x.id==e.target.dataset.id); if(!r||!r.dates) return;
         const di=+e.target.dataset.di;
         if(r.dates[di]) r.dates[di][e.target.dataset.dk]=e.target.value;
         recalc(r); // 出張日から自動算出する特別手当を更新
         refreshCalc(e.target.closest(".row-card"), r);
         scheduleSave();
-      });
+      };
+      el.addEventListener("input",handler);
+      el.addEventListener("change",handler);
     });
     // 特別手当 満額/半額トグル
     document.querySelectorAll("[data-halfset]").forEach(b=>b.addEventListener("click",()=>{
@@ -932,6 +940,7 @@
         r.collapsed=!r.collapsed;
         h.closest(".row-card").classList.toggle("collapsed");
         h.querySelector(".rh-sub").textContent=subLineOf(r);
+        scheduleSave();
       });
     });
     document.querySelectorAll("[data-del]").forEach(b=>{
@@ -953,7 +962,7 @@
       const top=card.getBoundingClientRect().top+window.pageYOffset-8;
       window.scrollTo({top:Math.max(0,top),behavior:"smooth"});
       const first=card.querySelector('input[type="text"]');
-      if(first) setTimeout(()=>{ try{ first.focus({preventScroll:true}); }catch(_){ } },400);
+      if(first) setTimeout(()=>{ if(first.isConnected){ try{ first.focus({preventScroll:true}); }catch(_){ } } },400);
     }
   });
 
@@ -962,7 +971,7 @@
     const g=$("attGrid"); g.innerHTML="";
     attachments.forEach(a=>{
       const d=document.createElement("div"); d.className="thumb";
-      d.innerHTML=`<img src="${a.dataUrl}"><button class="x" data-rm="${a.id}">×</button>${a.label?`<span class="pg">${esc(a.label)}</span>`:""}`;
+      d.innerHTML=`<img src="${esc(a.dataUrl)}"><button class="x" data-rm="${a.id}">×</button>${a.label?`<span class="pg">${esc(a.label)}</span>`:""}`;
       g.appendChild(d);
     });
     $("attEmpty").style.display=attachments.length?"none":"block";
@@ -974,26 +983,28 @@
   $("btnScan").addEventListener("click",()=>$("inScan").click());
   $("btnImg").addEventListener("click",()=>$("inImg").click());
   $("btnPdf").addEventListener("click",()=>$("inPdf").click());
-  async function readImage(file,label){
+  async function readImage(file,label,version=draftVersion){
     const dataUrl=isHeicFile(file) ? await convertHeicToJpeg(file) : await blobToDataUrl(file);
     const format=imageFormatFromDataUrl(dataUrl);
     if(!format) throw new Error("JPEGまたはPNG形式の画像を選択してください");
     await imgDim(dataUrl);
-    attachments.push({id:uid++,dataUrl,label:label||""});
+    if(version===draftVersion) attachments.push({id:uid++,dataUrl,label:label||""});
   }
   async function handleImgs(files,label){
+    const version=draftVersion;
     const hasHeic=files.some(isHeicFile);
     if(hasHeic) showOverlay("HEIC画像をJPEGに変換中…");
     let result;
     try{
       result=await processImageFiles(
         files,
-        file=>readImage(file,label||""),
+        file=>readImage(file,label||"",version),
         (err,file)=>console.error("画像の追加に失敗:",file&&file.name,err)
       );
     } finally {
       if(hasHeic) hideOverlay();
     }
+    if(version!==draftVersion) return {added:0,heicFailed:0,otherFailed:0};
     if(result.added){ renderAtt(); scheduleSave(); }
     return result;
   }
@@ -1022,11 +1033,15 @@
     const files=[...e.target.files]; e.target.value=""; if(!files.length) return;
     if(!window.pdfjsLib){ toast("PDF読込が利用できません"); return; }
     showOverlay("PDFを読み込み中…");
-    try{ for(const f of files){ await loadPdf(f); } renderAtt(); scheduleSave(); toast("PDFを取り込みました"); }
+    const version=draftVersion, before=attachments.length;
+    try{ for(const f of files){ await loadPdf(f,version); } if(version===draftVersion) toast("PDFを取り込みました"); }
     catch(err){ console.error(err); toast("PDFの読込に失敗しました"); }
-    hideOverlay();
+    finally{
+      if(version===draftVersion && attachments.length!==before){ renderAtt(); scheduleSave(); }
+      hideOverlay();
+    }
   });
-  async function loadPdf(file){
+  async function loadPdf(file,version=draftVersion){
     const buf=await file.arrayBuffer();
     const pdf=await pdfjsLib.getDocument({
       data:buf,
@@ -1036,13 +1051,14 @@
     }).promise;
     const base=file.name.replace(/\.pdf$/i,"");
     for(let p=1;p<=pdf.numPages;p++){
+      if(version!==draftVersion) return;
       const page=await pdf.getPage(p);
       const vp=page.getViewport({scale:2});
       const cv=document.createElement("canvas"); cv.width=vp.width; cv.height=vp.height;
       const ctx=cv.getContext("2d");
       ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,cv.width,cv.height); // 透明背景対策で白地に
       await page.render({canvasContext:ctx,viewport:vp}).promise;
-      attachments.push({id:uid++,dataUrl:cv.toDataURL("image/jpeg",0.85),label: pdf.numPages>1?`${trim(base,8)} p${p}`:trim(base,12)});
+      if(version===draftVersion) attachments.push({id:uid++,dataUrl:cv.toDataURL("image/jpeg",0.85),label: pdf.numPages>1?`${trim(base,8)} p${p}`:trim(base,12)});
     }
   }
   const trim=(s,n)=>s.length>n?s.slice(0,n)+"…":s;
@@ -1211,7 +1227,7 @@
     }
     return pdf;
   }
-  function baseName(){ const d=$("f_date").value||new Date().toISOString().slice(0,10); const n=$("f_name").value?("_"+$("f_name").value):""; return `立替精算書_${d}${n}`; }
+  function baseName(){ const d=$("f_date").value||today(); const n=$("f_name").value?("_"+$("f_name").value):""; return `立替精算書_${d}${n}`; }
   function fileName(){ return baseName()+".pdf"; }
 
   // 携帯は共有シート、PCはダウンロードに自動で切替（ファイルのみを渡す）
@@ -1227,7 +1243,7 @@
   // 保存 = 再読込できる入力データ(JSON)
   async function doSaveData(){
     try{
-      const name=`立替精算_data_${$("f_date").value||new Date().toISOString().slice(0,10)}.json`;
+      const name=`立替精算_data_${$("f_date").value||today()}.json`;
       const file=new File([snapshot()], name, {type:"application/json"});
       const res=await shareOrDownload([file]);
       if(res==="downloaded") toast("データを保存しました"); else if(res==="shared") toast("データを共有しました");
@@ -1311,7 +1327,7 @@
         imgs.push(c.toDataURL("image/jpeg",0.9));
       }
       const atts = attachments.length
-        ? attachments.map(a=>`<div class="pv-att"><img src="${a.dataUrl}"><span>${esc(a.label||"添付")}</span></div>`).join("")
+        ? attachments.map(a=>`<div class="pv-att"><img src="${esc(a.dataUrl)}"><span>${esc(a.label||"添付")}</span></div>`).join("")
         : `<div class="pv-empty">添付はありません</div>`;
       const sheets = imgs.map((src,i)=>`
         <div class="pv-label">精算書${imgs.length>1?`（${i+1} / ${imgs.length} ページ）`:""}</div>
@@ -1389,17 +1405,30 @@
   /* 入力データの一時保存（再作成用ファイル）と読み込み */
   $("inDraft").addEventListener("change",async e=>{
     const f=e.target.files[0]; e.target.value=""; if(!f) return;
+    const request=++loadVersion;
     try{
       const d=JSON.parse(await f.text());
-      $("f_date").value=d.date||""; $("f_name").value=d.name||"";
-      rows=(d.rows&&d.rows.length)?d.rows.map(migrate):[newRow()];
-      attachments=d.attachments||[];
-      uid=d.uid||(Math.max(0,...rows.map(r=>r.id),...attachments.map(a=>a.id))+1);
+      if(request!==loadVersion) return;
+      restoreSnapshot(d);
       renderRows(); renderAtt(); saveDraft(); toast("保存データを読み込みました");
     }catch(err){ console.error(err); toast("読み込みに失敗しました（ファイル形式をご確認ください）"); }
   });
   function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveDraft,600); }
-  async function saveDraft(){ try{ if(await store.set(snapshot())) flashSaved(); }catch(e){} }
+  function queueDraftWrite(task){
+    const write=draftWrite.then(task,task);
+    draftWrite=write.catch(()=>{});
+    return write;
+  }
+  async function saveDraft(){
+    clearTimeout(saveTimer);
+    const value=snapshot(), version=draftVersion;
+    try{
+      await queueDraftWrite(async()=>{
+        if(version!==draftVersion) return;
+        if(await store.set(value) && version===draftVersion) flashSaved();
+      });
+    }catch(e){}
+  }
   function flashSaved(){ const n=$("savedNote"); n.textContent="✓ 下書きを保存しました"; clearTimeout(n._t); n._t=setTimeout(()=>n.textContent="",1800); }
   function hasLegacyOther(r,key){
     return !!(toNum(r[key]) || r[key+"Note"] || (r[key+"Type"] && r[key+"Type"]!=="free"));
@@ -1447,7 +1476,7 @@
     ["Type","Rate","Half","Mode","Days"].forEach(suffix=>{ delete m["other2"+suffix]; });
     delete m._other2Calc;
     // 選択式から廃止した「自由入力（その他）」は、固定の「その他」へ移して保持する
-    if(m.other1Type==="free"){
+    if(m.other1Type==="free" && !isAllOther(m)){
       const freeAmount=toNum(m.other1);
       if(freeAmount || m.other1Note){
         m.other2Note=[m.other1Note,m.other2Note].filter(Boolean).join(" ／ ");
@@ -1465,15 +1494,46 @@
     }
     return m;
   }
+  function restoreSnapshot(d){
+    const record=v=>v && typeof v==="object" && !Array.isArray(v);
+    if(!record(d) || !Array.isArray(d.rows) ||
+       (d.attachments!=null && !Array.isArray(d.attachments))) throw new Error("保存データの形式が不正です");
+    const sourceRows=d.rows||[], sourceAtt=d.attachments||[];
+    const invalidRow=r=>!record(r) ||
+      Object.entries(r).some(([key,v])=>key!=="dates" && v!==null && typeof v==="object") ||
+      (r.dates!=null && (!Array.isArray(r.dates) || r.dates.some(dt=>!record(dt) ||
+        [dt.type,dt.d1,dt.d2].some(v=>v!=null && typeof v!=="string"))));
+    if(sourceRows.some(invalidRow) ||
+       sourceAtt.some(a=>!record(a) || typeof a.dataUrl!=="string" || (a.label!=null && typeof a.label!=="string")) ||
+       [d.date,d.name].some(v=>v!=null && typeof v!=="string")) throw new Error("明細・添付の形式が不正です");
+    // 保存済みuidを信用せず、全明細・添付より大きいIDから採番する。
+    const validId=v=>Number.isSafeInteger(Number(v)) && Number(v)>0 && Number(v)<Number.MAX_SAFE_INTEGER;
+    let next=validId(d.uid)?Number(d.uid):1;
+    for(const item of [...sourceRows,...sourceAtt]) if(validId(item.id)) next=Math.max(next,Number(item.id)+1);
+    const previousUid=uid, used=new Set();
+    uid=next;
+    const claim=id=>{
+      const n=Number(id);
+      if(validId(id) && !used.has(n)){ used.add(n); return n; }
+      const fresh=uid++; used.add(fresh); return fresh;
+    };
+    let restoredRows, restoredAtt;
+    try{
+      restoredRows=sourceRows.length?sourceRows.map(r=>migrate({...r,id:claim(r.id)})):[newRow()];
+      restoredAtt=sourceAtt.map(a=>({...a,id:claim(a.id)}));
+    }catch(err){ uid=previousUid; throw err; }
+    clearTimeout(saveTimer);
+    draftVersion++;
+    rows=restoredRows; attachments=restoredAtt;
+    $("f_date").value=d.date||""; $("f_name").value=d.name||"";
+  }
   async function loadDraft(){
     try{
+      const request=loadVersion;
       const val=await store.get();
+      if(request!==loadVersion) return true;
       if(val){
-        const d=JSON.parse(val);
-        $("f_date").value=d.date||""; $("f_name").value=d.name||"";
-        rows=(d.rows&&d.rows.length)?d.rows.map(migrate):[newRow()];
-        attachments=d.attachments||[];
-        uid=d.uid||(Math.max(0,...rows.map(r=>r.id),...attachments.map(a=>a.id))+1);
+        restoreSnapshot(JSON.parse(val));
         return true;
       }
     }catch(e){}
@@ -1481,9 +1541,13 @@
   }
   async function resetAll(){
     if(!confirm("入力内容と添付をすべて消去します。よろしいですか？")) return;
-    await store.del();
-    $("f_date").value=new Date().toISOString().slice(0,10); $("f_name").value=""; rows=[newRow()]; attachments=[]; uid=2;
-    renderRows(); renderAtt(); toast("すべてリセットしました");
+    clearTimeout(saveTimer);
+    draftVersion++; loadVersion++;
+    uid=1;
+    $("f_date").value=today(); $("f_name").value=""; rows=[newRow()]; attachments=[];
+    renderRows(); renderAtt();
+    await queueDraftWrite(()=>store.del());
+    toast("すべてリセットしました");
   }
   $("clearBtn").addEventListener("click",resetAll);
   $("resetTop").addEventListener("click",resetAll);
@@ -1492,7 +1556,7 @@
 
   (async function init(){
     const had=await loadDraft();
-    if(!had){ $("f_date").value=new Date().toISOString().slice(0,10); rows=[newRow()]; }
+    if(!had){ $("f_date").value=today(); rows=[newRow()]; }
     renderRows(); renderAtt();
   })();
 })();
