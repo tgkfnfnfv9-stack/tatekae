@@ -1023,15 +1023,16 @@
 
   $("inScan").addEventListener("change",async e=>{
     const files=[...e.target.files]; e.target.value="";
-    if(files.length) showImageResult(await handleImgs(files,"撮影"),()=>"写真を追加しました");
+    if(files.length){ loadVersion++; showImageResult(await handleImgs(files,"撮影"),()=>"写真を追加しました"); }
   });
   $("inImg").addEventListener("change",async e=>{
     const files=[...e.target.files]; e.target.value="";
-    if(files.length) showImageResult(await handleImgs(files,""),n=>n+"件の画像を追加しました");
+    if(files.length){ loadVersion++; showImageResult(await handleImgs(files,""),n=>n+"件の画像を追加しました"); }
   });
   $("inPdf").addEventListener("change",async e=>{
     const files=[...e.target.files]; e.target.value=""; if(!files.length) return;
     if(!window.pdfjsLib){ toast("PDF読込が利用できません"); return; }
+    loadVersion++;
     showOverlay("PDFを読み込み中…");
     const version=draftVersion, before=attachments.length;
     try{ for(const f of files){ await loadPdf(f,version); } if(version===draftVersion) toast("PDFを取り込みました"); }
@@ -1361,7 +1362,8 @@
         (r.lodgingKind==="その他"&&toNum(r.lodging)>0) ||
         (r.perDiemKind==="その他"&&toNum(r.perDiem)>0) ||
         (r.gasMode==="その他"&&toNum(r.gas)>0) ||
-        toNum(r.other1)>0 || toNum(r.other2)>0;
+        toNum(r.other1)>0 || toNum(r.other2)>0 ||
+        (isAllOther(r) && (toNum(r.other3)>0 || toNum(r.other4)>0));
       if(other) set.add("その他");
     });
     return [...set];
@@ -1386,19 +1388,64 @@
   /* 保存先の抽象化：ホスト独自のwindow.storageが有ればそれを、無ければlocalStorageを使う（自動保存を確実に効かせる） */
   const DRAFT_KEY="rikitate:draft";
   const store={
+    latestValue:null,
+    failedCache:null,
+    readLocal(){
+      try{
+        const raw=localStorage.getItem(DRAFT_KEY); if(raw==null) return null;
+        try{
+          const cached=JSON.parse(raw);
+          if(cached && cached._draftCache===1) return {...cached,raw};
+        }catch(e){}
+        return {value:raw,pending:false,raw}; // 以前の保存形式にも対応
+      }catch(e){ return null; }
+    },
+    cache(v){
+      this.latestValue=v;
+      this.failedCache=null;
+      const previous=this.readLocal();
+      try{
+        localStorage.setItem(DRAFT_KEY,JSON.stringify({_draftCache:1,value:v,pending:true}));
+        return true;
+      }catch(e){ this.failedCache=previous; return false; }
+    },
+    clearLocal(){
+      this.latestValue=null;
+      this.failedCache=null;
+      // 非同期の削除完了前に閉じられても、旧下書きを復元しない。
+      try{ localStorage.setItem(DRAFT_KEY,JSON.stringify({_draftCache:1,deleted:true})); }
+      catch(e){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+    },
     async set(v){
-      try{ if(window.storage&&window.storage.set){ await window.storage.set(DRAFT_KEY,v,false); return true; } }catch(e){}
-      try{ localStorage.setItem(DRAFT_KEY,v); return true; }catch(e){}
-      return false;
+      try{
+        if(window.storage&&window.storage.set){
+          await window.storage.set(DRAFT_KEY,v,false);
+          const cached=this.readLocal();
+          const unchangedFailedCache=this.failedCache && cached && cached.raw===this.failedCache.raw;
+          if(this.latestValue===v && cached &&
+            ((cached.pending && cached.value===v) || ((cached.pending || cached.deleted) && unchangedFailedCache))){
+            // 容量不足で新しいキャッシュを書けなかった場合も、旧pendingを残さない。
+            try{ localStorage.setItem(DRAFT_KEY,JSON.stringify({_draftCache:1,value:v,pending:false})); }
+            catch(e){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
+          }
+          return true;
+        }
+      }catch(e){}
+      const cached=this.readLocal();
+      return !!(cached && cached.value===v);
     },
     async get(){
+      const cached=this.readLocal();
+      if(cached && cached.deleted) return null;
+      if(cached && cached.pending) return cached.value;
       try{ if(window.storage&&window.storage.get){ const r=await window.storage.get(DRAFT_KEY); if(r&&r.value!=null) return r.value; } }catch(e){}
-      try{ return localStorage.getItem(DRAFT_KEY); }catch(e){}
-      return null;
+      return cached ? cached.value : null;
     },
     async del(){
-      try{ if(window.storage&&window.storage.delete) await window.storage.delete(DRAFT_KEY); }catch(e){}
-      try{ localStorage.removeItem(DRAFT_KEY); }catch(e){}
+      let deleted=!(window.storage&&window.storage.get);
+      try{ if(window.storage&&window.storage.delete){ await window.storage.delete(DRAFT_KEY); deleted=true; } }catch(e){}
+      const cached=this.readLocal();
+      if(deleted && cached && cached.deleted){ try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} }
     }
   };
 
@@ -1413,7 +1460,7 @@
       renderRows(); renderAtt(); saveDraft(); toast("保存データを読み込みました");
     }catch(err){ console.error(err); toast("読み込みに失敗しました（ファイル形式をご確認ください）"); }
   });
-  function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveDraft,600); }
+  function scheduleSave(){ loadVersion++; clearTimeout(saveTimer); saveTimer=setTimeout(saveDraft,600); }
   function queueDraftWrite(task){
     const write=draftWrite.then(task,task);
     draftWrite=write.catch(()=>{});
@@ -1421,7 +1468,10 @@
   }
   async function saveDraft(){
     clearTimeout(saveTimer);
+    saveTimer=null;
     const value=snapshot(), version=draftVersion;
+    // localStorageは同期的に記録し、終了時もホスト通信を待たず入力を保持する。
+    store.cache(value);
     try{
       await queueDraftWrite(async()=>{
         if(version!==draftVersion) return;
@@ -1429,6 +1479,9 @@
       });
     }catch(e){}
   }
+  function flushDraft(){ if(saveTimer!==null) saveDraft(); }
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden") flushDraft(); });
+  window.addEventListener("pagehide",flushDraft);
   function flashSaved(){ const n=$("savedNote"); n.textContent="✓ 下書きを保存しました"; clearTimeout(n._t); n._t=setTimeout(()=>n.textContent="",1800); }
   function hasLegacyOther(r,key){
     return !!(toNum(r[key]) || r[key+"Note"] || (r[key+"Type"] && r[key+"Type"]!=="free"));
@@ -1523,6 +1576,7 @@
       restoredAtt=sourceAtt.map(a=>({...a,id:claim(a.id)}));
     }catch(err){ uid=previousUid; throw err; }
     clearTimeout(saveTimer);
+    saveTimer=null;
     draftVersion++;
     rows=restoredRows; attachments=restoredAtt;
     $("f_date").value=d.date||""; $("f_name").value=d.name||"";
@@ -1531,7 +1585,7 @@
     try{
       const request=loadVersion;
       const val=await store.get();
-      if(request!==loadVersion) return true;
+      if(request!==loadVersion) return false;
       if(val){
         restoreSnapshot(JSON.parse(val));
         return true;
@@ -1542,7 +1596,9 @@
   async function resetAll(){
     if(!confirm("入力内容と添付をすべて消去します。よろしいですか？")) return;
     clearTimeout(saveTimer);
+    saveTimer=null;
     draftVersion++; loadVersion++;
+    store.clearLocal();
     uid=1;
     $("f_date").value=today(); $("f_name").value=""; rows=[newRow()]; attachments=[];
     renderRows(); renderAtt();
@@ -1555,9 +1611,9 @@
   $("f_name").addEventListener("input",scheduleSave);
 
   (async function init(){
-    const had=await loadDraft();
-    if(!had){ $("f_date").value=today(); rows=[newRow()]; }
+    $("f_date").value=today(); rows=[newRow()];
     renderRows(); renderAtt();
+    if(await loadDraft()){ renderRows(); renderAtt(); }
   })();
 })();
 </script>
