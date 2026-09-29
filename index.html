@@ -190,9 +190,13 @@
   .pv-sheetwrap{overflow:auto;border:1px solid var(--keisen);border-radius:8px;background:#fff;margin-bottom:18px;-webkit-overflow-scrolling:touch}
   .pv-sheet{display:block;width:1150px;max-width:none;height:auto;cursor:zoom-out}
   .pv-sheet.fit{width:100%;cursor:zoom-in}
+  .pv-sheetwrap,.pv-att-view{touch-action:pan-x pan-y}
   .pv-atts{display:flex;flex-direction:column;gap:12px}
   .pv-att{border:1px solid var(--keisen);border-radius:8px;background:#fff;overflow:hidden}
   .pv-att img{display:block;width:100%;height:auto}
+  .pv-att-view{overflow:auto;-webkit-overflow-scrolling:touch}
+  .pv-att .pv-zoom{max-width:none;cursor:zoom-out}
+  .pv-att .pv-zoom.fit{cursor:zoom-in}
   .pv-att span{display:block;font-size:11px;color:var(--sumi-soft);padding:6px 10px;background:#faf8f2;border-top:1px solid var(--keisen)}
   .pv-empty{font-size:12px;color:var(--keisen-strong);text-align:center;padding:20px 0}
   .pv-hint{font-size:10.5px;color:var(--keisen-strong);margin:0 2px 10px}
@@ -1316,6 +1320,82 @@
   document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeOutputMenu(); });
 
   /* ── プレビュー（確認） ── */
+  function bindPreviewZoom(img){
+    const wrap=img.parentElement, body=$("pvBody");
+    let pinch=null, drag=null, suppressClickUntil=0;
+    const fitWidth=()=>wrap.clientWidth;
+    const expandedWidth=()=>img.classList.contains("pv-sheet") ? 1150 : Math.max(1150,fitWidth()*2);
+    function resize(width,anchor,target=anchor){
+      const before=img.getBoundingClientRect(), fit=fitWidth();
+      if(!before.width || !fit) return;
+      const next=Math.max(Math.min(fit,expandedWidth()),Math.min(Math.max(1150,fit)*4,width));
+      const isFit=Math.abs(next-fit)<1;
+      img.classList.toggle("fit",isFit);
+      img.style.width=isFit ? "" : next+"px";
+      const after=img.getBoundingClientRect(), ratio=after.width/before.width;
+      // 指・マウスの位置にある部分を保ち、拡大後も同じ箇所を確認できるようにする。
+      wrap.scrollLeft+=after.left+(anchor.x-before.left)*ratio-target.x;
+      body.scrollTop+=after.top+(anchor.y-before.top)*ratio-target.y;
+    }
+    const point=e=>({x:e.clientX,y:e.clientY});
+    function touchPair(e){
+      const [a,b]=e.touches;
+      return {distance:Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY),
+        center:{x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2}};
+    }
+    function startPinch(e){
+      if(e.touches.length!==2 || !e.cancelable) return;
+      e.preventDefault(); pinch=touchPair(e); suppressClickUntil=Date.now()+500;
+    }
+    wrap.addEventListener("touchstart",startPinch,{passive:false});
+    wrap.addEventListener("touchmove",e=>{
+      if(e.touches.length!==2 || !e.cancelable) return;
+      if(!pinch){ startPinch(e); return; }
+      e.preventDefault();
+      const next=touchPair(e);
+      if(pinch.distance>0 && next.distance>0){
+        resize(img.getBoundingClientRect().width*next.distance/pinch.distance,pinch.center,next.center);
+      }
+      pinch=next; suppressClickUntil=Date.now()+500;
+    },{passive:false});
+    wrap.addEventListener("touchend",e=>{
+      if(pinch) suppressClickUntil=Date.now()+500;
+      pinch=null;
+      if(e.touches.length===2) startPinch(e);
+    },{passive:false});
+    wrap.addEventListener("touchcancel",()=>{ pinch=null; suppressClickUntil=Date.now()+500; });
+    wrap.addEventListener("wheel",e=>{
+      if(e.shiftKey || !e.deltaY || !e.cancelable) return; // Shift+ホイールは横スクロールを維持
+      const unit=e.deltaMode===1 ? 16 : e.deltaMode===2 ? body.clientHeight : 1;
+      const delta=Math.max(-200,Math.min(200,e.deltaY*unit));
+      e.preventDefault();
+      resize(img.getBoundingClientRect().width*Math.exp(-delta*0.002),point(e));
+    },{passive:false});
+    img.addEventListener("pointerdown",e=>{
+      if(e.pointerType!=="mouse" || e.button!==0) return;
+      drag={id:e.pointerId,x:e.clientX,y:e.clientY,left:wrap.scrollLeft,top:body.scrollTop};
+      img.setPointerCapture(e.pointerId);
+    });
+    img.addEventListener("pointermove",e=>{
+      if(!drag || e.pointerId!==drag.id) return;
+      const dx=drag.x-e.clientX, dy=drag.y-e.clientY;
+      if(!drag.moved && Math.hypot(dx,dy)<4) return;
+      drag.moved=true; img.style.cursor="grabbing";
+      wrap.scrollLeft=drag.left+dx; body.scrollTop=drag.top+dy;
+      suppressClickUntil=Date.now()+500;
+    });
+    const endDrag=()=>{
+      if(drag && drag.moved) suppressClickUntil=Date.now()+500;
+      drag=null; img.style.cursor="";
+    };
+    img.addEventListener("pointerup",endDrag);
+    img.addEventListener("pointercancel",endDrag);
+    img.addEventListener("lostpointercapture",endDrag);
+    img.addEventListener("click",e=>{
+      if(Date.now()<suppressClickUntil) return;
+      resize(img.classList.contains("fit") ? expandedWidth() : fitWidth(),point(e));
+    });
+  }
   async function openPreview(){
     if(!window.html2canvas){ toast("読込中です。少し待って再度お試しください"); return; }
     showOverlay("プレビューを作成中…");
@@ -1328,19 +1408,18 @@
         imgs.push(c.toDataURL("image/jpeg",0.9));
       }
       const atts = attachments.length
-        ? attachments.map(a=>`<div class="pv-att"><img src="${esc(a.dataUrl)}"><span>${esc(a.label||"添付")}</span></div>`).join("")
+        ? attachments.map(a=>`<div class="pv-att"><div class="pv-att-view"><img class="pv-zoom fit" draggable="false" src="${esc(a.dataUrl)}"></div><span>${esc(a.label||"添付")}</span></div>`).join("")
         : `<div class="pv-empty">添付はありません</div>`;
       const sheets = imgs.map((src,i)=>`
         <div class="pv-label">精算書${imgs.length>1?`（${i+1} / ${imgs.length} ページ）`:""}</div>
-        <div class="pv-hint">横にスクロールで確認／シートをタップで「全体表示⇄拡大」を切替</div>
-        <div class="pv-sheetwrap"><img class="pv-sheet" src="${src}"></div>`).join("");
+        <div class="pv-hint">2本指・マウスホイールで拡大・縮小／ドラッグで移動／タップ・クリックで全体表示⇄拡大</div>
+        <div class="pv-sheetwrap"><img class="pv-sheet pv-zoom" draggable="false" src="${src}"></div>`).join("");
       $("pvBody").innerHTML=
         sheets +
         `<div class="pv-label">添付書類（${attachments.length}件）</div>
+        ${attachments.length ? `<div class="pv-hint">添付画像も2本指・マウスホイールで拡大・縮小できます</div>` : ""}
         <div class="pv-atts">${atts}</div>`;
-      $("pvBody").querySelectorAll(".pv-sheet").forEach(img=>{
-        img.addEventListener("click",()=>img.classList.toggle("fit")); // タップで全体表示⇄拡大
-      });
+      $("pvBody").querySelectorAll(".pv-zoom").forEach(bindPreviewZoom);
       hideOverlay();
       $("preview").classList.add("on");
       $("pvBody").scrollTop=0;
