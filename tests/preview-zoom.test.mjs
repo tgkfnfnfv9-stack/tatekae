@@ -156,6 +156,7 @@ test("再作成した複数ページと添付画像の全てに拡大操作を�
   const html2canvas=async(_el,options)=>{assert.equal(options.scale,2);captures++;
     return {toDataURL:()=>"data:image/jpeg;base64,AA=="};};
   const context=vm.createContext({$:id=>elements[id]??{addEventListener(){}},window:{html2canvas},html2canvas,
+    draftVersion:0,assertDraftVersion(){},
     buildPrintSheet:()=>builds++,showOverlay(){},hideOverlay(){},toast(){},console,
     esc:value=>value,attachments:[{dataUrl:"data:image/jpeg;base64,BB==",label:"領収書"}]});
   const end=script.indexOf("  /* ── 添付チェック",start);

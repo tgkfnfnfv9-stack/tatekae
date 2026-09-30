@@ -38,7 +38,8 @@ function harness(storage = {}, globals = {}, runInit = false) {
   });
   const start = script.indexOf("  (async function init(){");
   const expose = `
-    globalThis.app={snapshot,newRow,bindRowEvents,resetAll,saveDraft,loadDraft,recalc,buildPrintSheet,readImage,
+    globalThis.app={snapshot,newRow,bindRowEvents,resetAll,saveDraft,loadDraft,recalc,buildPrintSheet,readImage,otherSlot,
+      generatePdf,openPreview,doShare,doSavePdf,
       today:typeof today==="function"?today:null};
   `;
   vm.runInContext(script.slice(0, start) + expose + (runInit
@@ -447,4 +448,171 @@ test("旧リセット記録が残りキャッシュ書込が失敗してもホ�
   const reopened=harness(storage,{localStorage:local});
   assert.equal(await reopened.app.loadDraft(),true);
   assert.equal(reopened.state().name,"リセット後の新しい保存");
+});
+
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+function deferredImage(h){
+  let image;
+  h.context.FileReader=class {
+    readAsDataURL(){this.result="data:image/jpeg;base64,AA==";queueMicrotask(()=>this.onload());}
+  };
+  h.context.Image=class {set src(_){image=this;this.naturalWidth=10;this.naturalHeight=10;}};
+  return ()=>image.onload();
+}
+
+test("先に選択した画像の完了は後から選択した保存データの読込を取り消さない",async()=>{
+  const h=harness();const finishImage=deferredImage(h);
+  const imageInput=h.document.getElementById("inImg");
+  imageInput.files=[{name:"receipt.jpg",type:"image/jpeg"}];
+  const imageLoading=imageInput.dispatch("change");await tick();
+  let finishData;
+  const dataInput=h.document.getElementById("inDraft");
+  dataInput.files=[{text:()=>new Promise(resolve=>{finishData=resolve;})}];
+  const dataLoading=dataInput.dispatch("change");
+  finishImage();await imageLoading;
+  finishData(JSON.stringify({name:"後から選択した保存データ",rows:[{id:20}],attachments:[]}));
+  await dataLoading;
+  assert.equal(h.state().name,"後から選択した保存データ");
+  assert.equal(h.state().rows[0].id,20);assert.equal(h.state().attachments.length,0);
+});
+
+test("複数画像の途中で閉じても読込成功済みの画像を保存できる",async()=>{
+  const local=memoryStorage(),h=harness({}, {localStorage:local});
+  await h.load({name:"入力済み",rows:[{id:1}]});await h.app.saveDraft();
+  let second;
+  h.context.FileReader=class {
+    readAsDataURL(file){this.result="data:image/jpeg;base64,AA==";
+      if(file.name==="second.jpg")second=this;else queueMicrotask(()=>this.onload());}
+  };
+  h.context.Image=class {set src(_){this.naturalWidth=10;this.naturalHeight=10;queueMicrotask(()=>this.onload());}};
+  const input=h.document.getElementById("inImg");input.files=[{name:"first.jpg"},{name:"second.jpg"}];
+  const loading=input.dispatch("change");await tick();
+  assert.equal(h.state().attachments.length,1);
+  h.windowHandlers.get("pagehide")();
+  const cached=JSON.parse(JSON.parse(local.getItem("rikitate:draft")).value);
+  second.onload();await loading;
+  assert.equal(cached.attachments.length,1);assert.equal(cached.name,"入力済み");
+});
+
+test("PDFの途中で閉じても取り込み成功済みのページを保存できる",async()=>{
+  const local=memoryStorage(),h=harness({}, {localStorage:local});
+  await h.load({rows:[{id:1}]});await h.app.saveDraft();let finish;
+  const page={getViewport:()=>({width:10,height:10}),render:()=>({promise:Promise.resolve()})};
+  const pdfjsLib={getDocument:()=>({promise:Promise.resolve({numPages:2,
+    getPage:async n=>n===1?page:new Promise(resolve=>{finish=()=>resolve(page);})})})};
+  h.context.window.pdfjsLib=pdfjsLib;h.context.pdfjsLib=pdfjsLib;
+  h.document.createElement=()=>({getContext:()=>({fillRect(){}}),toDataURL:()=>"data:image/jpeg;base64,AA=="});
+  const input=h.document.getElementById("inPdf");input.files=[{name:"receipt.pdf",arrayBuffer:async()=>new ArrayBuffer(0)}];
+  const loading=input.dispatch("change");await tick();assert.equal(h.state().attachments.length,1);
+  h.windowHandlers.get("pagehide")();
+  const cached=JSON.parse(JSON.parse(local.getItem("rikitate:draft")).value);
+  finish();await loading;assert.equal(cached.attachments.length,1);
+});
+
+test("旧形式の出張日を復元し、明示的に削除済みの日付は増やさない",async()=>{
+  const h=harness();await h.load({rows:[{id:1,date:"2026-09-30"}]});
+  assert.deepEqual(h.state().rows[0].dates,[{type:"single",d1:"2026-09-30"}]);
+  await h.load({rows:[{id:1,date:"2026-09-30",dates:[]}]});
+  assert.deepEqual(h.state().rows[0].dates,[]);
+  const data=h.state();await h.load(data);assert.deepEqual(h.state().rows[0].dates,[]);
+});
+
+test("バーコード・カスタムの全9費目をその他として添付注意へ反映する",async()=>{
+  const h=harness();
+  for(const konType of ["機械バーコード","カスタム"])
+    for(const key of ["plaza","transport","lodging","perDiem","gas","other1","other2","other3","other4"]){
+      await h.load({rows:[{id:1,konType,[key]:"1000"}]});
+      const checklist=h.document.getElementById("attChecklist");
+      assert.equal(checklist.style.display,"block",`${konType} ${key}`);
+      assert.match(checklist.innerHTML,/<span class="chk-tag">その他<\/span>/);
+      assert.doesNotMatch(checklist.innerHTML,/<span class="chk-tag">(?:交通費|宿泊費|ガソリン代)<\/span>/);
+    }
+});
+
+test("全角・カンマ付き金額は入力合計とPDFの各金額欄で同じ値になる",async()=>{
+  const h=harness();
+  for(const value of ["１２３４","１，２３４","¥ 1,234"]){
+    await h.load({rows:[{id:1}]});
+    const input=h.element();input.dataset={id:"1",key:"transport"};input.value=value;
+    h.selectors.set("#rows input",[input]);h.app.bindRowEvents();await input.dispatch("input");
+    assert.equal(h.document.getElementById("grandTotal").textContent,"1,234");
+    const print=h.document.getElementById("printArea");print.style={removeProperty(){},setProperty(){}};
+    h.app.buildPrintSheet();assert.match(print.innerHTML,/<span class="num">1,234<\/span>/);
+  }
+});
+
+test("手動日数の特別手当には自動計算用の3日目・期間日数の説明を出さない",()=>{
+  const h=harness(),r=h.app.newRow();r.other1Days="2";h.app.recalc(r);
+  assert.equal(r.other1,"2000");
+  assert.doesNotMatch(h.app.otherSlot(r,"other1",false),/連続期間の3日目から適用/);
+  r.other1Mode="auto";assert.match(h.app.otherSlot(r,"other1",false),/連続期間の3日目から適用/);
+  r.other1Mode="days";r.other1Days="0";r.dates=[{type:"range",d1:"2026-09-01",d2:"2026-09-10"}];
+  h.app.recalc(r);assert.doesNotMatch(r._other1Calc,/連続期間/);
+});
+
+function outputHarness(){
+  let finish;
+  const captures=[],pdfs=[],shared=[];
+  class Pdf {
+    constructor(){this.images=[];this.internal={pageSize:{getWidth:()=>297,getHeight:()=>210}};pdfs.push(this);}
+    addImage(src){this.images.push(src);}addPage(){}setFontSize(){}setTextColor(){}text(){}
+    output(){return new Blob(["PDF"]);}
+  }
+  const html2canvas=async()=>{
+    captures.push(h.document.getElementById("printArea").innerHTML);
+    return new Promise(resolve=>{finish=()=>resolve({width:1480,height:1022,
+      toDataURL:()=>"data:image/jpeg;base64,AA=="});});
+  };
+  const h=harness({}, {window:{storage:{},jspdf:{jsPDF:Pdf},html2canvas,scrollTo(){},addEventListener(){}},
+    html2canvas,File:class {constructor(_parts,name){this.name=name;}},
+    navigator:{canShare:()=>true,share:async payload=>{shared.push(payload);}}});
+  const print=h.document.getElementById("printArea");
+  print.style={removeProperty(){},setProperty(){}};print.querySelectorAll=()=>[{}];
+  h.context.Image=class {set src(_){this.naturalWidth=10;this.naturalHeight=10;queueMicrotask(()=>this.onload());}};
+  h.context.FileReader=class {readAsDataURL(){this.result="data:image/jpeg;base64,BB==";queueMicrotask(()=>this.onload());}};
+  return {h,captures,pdfs,shared,finish:()=>finish?.()};
+}
+
+test("PDF生成中の保存データ復元で旧精算書と新添付を混在させない",async()=>{
+  const o=outputHarness(),{h}=o;
+  await h.load({name:"旧精算書",rows:[{id:1}]});
+  const generating=h.app.generatePdf();await tick();assert.match(o.captures[0],/旧精算書/);
+  await h.load({name:"新精算書",rows:[{id:20}],attachments:[{id:21,dataUrl:"data:image/jpeg;base64,BB=="}]});
+  o.finish();await assert.rejects(generating,err=>err.name==="DraftChangedError");
+});
+
+test("プレビュー生成中に別データが復元された場合は古い画像を表示しない",async()=>{
+  const o=outputHarness(),{h}=o;await h.load({name:"旧精算書",rows:[{id:1}]});
+  const generating=h.app.openPreview();await tick();
+  await h.load({name:"新精算書",rows:[{id:20}]});o.finish();await generating;
+  assert.equal(h.document.getElementById("pvBody").innerHTML,"");
+  assert.match(h.document.getElementById("toast").textContent,/入力内容が変わった/);
+});
+
+test("PDFの共有ファイル名は生成開始時の精算書と一致する",async()=>{
+  const o=outputHarness(),{h}=o;await h.load({date:"2026-09-30",name:"開始時氏名",rows:[{id:1}]});
+  const generating=h.app.doShare();await tick();
+  h.document.getElementById("f_name").value="後の氏名";o.finish();await generating;
+  assert.equal(o.shared.length,1);
+  assert.equal(o.shared[0].files[0].name,"立替精算書_2026-09-30_開始時氏名.pdf");
+  assert.equal(o.shared[0].title,o.shared[0].files[0].name);
+});
+
+test("保存先の選択中に別データが復元された場合は古い名前のPDFへ書き込まない",async()=>{
+  const o=outputHarness(),{h}=o;await h.load({name:"旧精算書",rows:[{id:1}]});
+  let choose,writes=0;
+  h.context.window.showSaveFilePicker=()=>new Promise(resolve=>{choose=resolve;});
+  const saving=h.app.doSavePdf();await tick();
+  await h.load({name:"新精算書",rows:[{id:20}]});
+  choose({createWritable:async()=>({write:async()=>{writes++;},close:async()=>{}})});
+  await tick();o.finish();await saving;
+  assert.equal(writes,0);assert.equal(o.captures.length,0);
+  assert.match(h.document.getElementById("toast").textContent,/入力内容が変わった/);
+});
+
+test("PDF生成開始後に完成した添付は作成中のPDFへ途中追加しない",async()=>{
+  const o=outputHarness(),{h}=o;await h.load({rows:[{id:1}]});
+  const generating=h.app.generatePdf();await tick();
+  await h.app.readImage({name:"new.jpg"},"後で完成");assert.equal(h.state().attachments.length,1);
+  o.finish();const pdf=await generating;assert.equal(pdf.images.length,1);
 });
