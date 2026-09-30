@@ -381,8 +381,8 @@
   let rows = [], attachments = [], uid = 1, saveTimer = null;
   let draftWrite=Promise.resolve(), draftVersion=0, loadVersion=0;
   const $ = id => document.getElementById(id);
-  const yen = n => (Number(n)||0).toLocaleString("ja-JP");
-  const toNum = v => { const n = parseInt(String(v).replace(/[^\d.-]/g,""),10); return isNaN(n)?0:n; };
+  const toNum = v => { const n = parseInt(String(v).normalize("NFKC").replace(/[^\d.-]/g,""),10); return isNaN(n)?0:n; };
+  const yen = n => toNum(n).toLocaleString("ja-JP");
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   const fmtMD = d => { if(!d) return ""; const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d); return m?`${Number(m[2])}/${Number(m[3])}`:d; };
   const today = () => {
@@ -601,7 +601,8 @@
       const half = p.half ? (r[key+"Half"]?"（半額）":"（満額）") : "";
       r["_"+key+"Calc"] = amt
         ? `${p.label}${half} ${yen(unit)}円×${ad}日＝${yen(amt)}円`
-        : (p.manual && !unit ? "1日の金額を入力してください" : (validRanges(r).length ? "連続期間の対象日数は0日" : ""));
+        : (p.manual && !unit ? "1日の金額を入力してください" : (validRanges(r).length
+          ? (r[key+"Mode"]==="days" ? "選択した日数は0日" : "連続期間の対象日数は0日") : ""));
     });
   }
 
@@ -826,7 +827,7 @@
     const half = !!r[key+"Half"];
     const mode = r[key+"Mode"]==="days" ? "days" : "auto";
     const rateInfo = p.manual ? "" : `<div class="special-rate">
-        <span class="sr-label">1日の金額${p.fromDay3?'<small>連続期間の3日目から適用</small>':""}</span>
+        <span class="sr-label">1日の金額${p.fromDay3 && mode==="auto"?'<small>連続期間の3日目から適用</small>':""}</span>
         <strong class="sr-value">¥${yen(otherUnit(r,key))}</strong>
       </div>`;
     const rateBlock = p.manual
@@ -992,7 +993,10 @@
     const format=imageFormatFromDataUrl(dataUrl);
     if(!format) throw new Error("JPEGまたはPNG形式の画像を選択してください");
     await imgDim(dataUrl);
-    if(version===draftVersion) attachments.push({id:uid++,dataUrl,label:label||""});
+    if(version===draftVersion){
+      attachments.push({id:uid++,dataUrl,label:label||""});
+      scheduleSave(false); // 成功済みの画像は、残りの処理中に閉じても保存する。
+    }
   }
   async function handleImgs(files,label){
     const version=draftVersion;
@@ -1009,7 +1013,7 @@
       if(hasHeic) hideOverlay();
     }
     if(version!==draftVersion) return {added:0,heicFailed:0,otherFailed:0};
-    if(result.added){ renderAtt(); scheduleSave(); }
+    if(result.added){ renderAtt(); scheduleSave(false); }
     return result;
   }
 
@@ -1042,7 +1046,7 @@
     try{ for(const f of files){ await loadPdf(f,version); } if(version===draftVersion) toast("PDFを取り込みました"); }
     catch(err){ console.error(err); toast("PDFの読込に失敗しました"); }
     finally{
-      if(version===draftVersion && attachments.length!==before){ renderAtt(); scheduleSave(); }
+      if(version===draftVersion && attachments.length!==before){ renderAtt(); scheduleSave(false); }
       hideOverlay();
     }
   });
@@ -1063,7 +1067,10 @@
       const ctx=cv.getContext("2d");
       ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,cv.width,cv.height); // 透明背景対策で白地に
       await page.render({canvasContext:ctx,viewport:vp}).promise;
-      if(version===draftVersion) attachments.push({id:uid++,dataUrl:cv.toDataURL("image/jpeg",0.85),label: pdf.numPages>1?`${trim(base,8)} p${p}`:trim(base,12)});
+      if(version===draftVersion){
+        attachments.push({id:uid++,dataUrl:cv.toDataURL("image/jpeg",0.85),label: pdf.numPages>1?`${trim(base,8)} p${p}`:trim(base,12)});
+        scheduleSave(false);
+      }
     }
   }
   const trim=(s,n)=>s.length>n?s.slice(0,n)+"…":s;
@@ -1205,23 +1212,32 @@
   }
 
   /* ── PDF ── */
+  function assertDraftVersion(version){
+    if(version===draftVersion) return;
+    const err=new Error("入力内容が変わったため、もう一度確認・出力してください");
+    err.name="DraftChangedError";
+    throw err;
+  }
   async function generatePdf(){
     if(!jsPDF || !window.html2canvas){ toast("PDF機能を読込中です。少し待って再度お試しください"); return null; }
+    const version=draftVersion, sourceAtt=[...attachments];
     buildPrintSheet();
     const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
     const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), m=8;
     const pageEls=[...$("printArea").querySelectorAll(".pa-page")];
     for(let i=0;i<pageEls.length;i++){
       const canvas=await html2canvas(pageEls[i],{scale:2,backgroundColor:"#ffffff",useCORS:true,windowWidth:1480});
+      assertDraftVersion(version);
       let iw=pw-m*2, ih=canvas.height*iw/canvas.width;
       if(ih>ph-m*2){ ih=ph-m*2; iw=canvas.width*ih/canvas.height; }
       if(i>0) pdf.addPage("a4","landscape");
       pdf.addImage(canvas.toDataURL("image/jpeg",0.92),"JPEG",(pw-iw)/2,m,iw,ih);
     }
-    for(const a of attachments){
+    for(const a of sourceAtt){
       const format=imageFormatFromDataUrl(a.dataUrl);
       if(!format) throw new Error("PDFに追加できない画像形式です（JPEGまたはPNGを選択してください）");
       const dim=await imgDim(a.dataUrl);
+      assertDraftVersion(version);
       pdf.addPage("a4","portrait");
       const PW=pdf.internal.pageSize.getWidth(), PH=pdf.internal.pageSize.getHeight();
       pdf.setFontSize(9); pdf.setTextColor(120);
@@ -1230,6 +1246,7 @@
       let w=availW, h=dim.h*w/dim.w; if(h>availH){ h=availH; w=dim.w*h/dim.h; }
       pdf.addImage(a.dataUrl,format,(PW-w)/2,14,w,h);
     }
+    assertDraftVersion(version);
     return pdf;
   }
   function baseName(){ const d=$("f_date").value||today(); const n=$("f_name").value?("_"+$("f_name").value):""; return `立替精算書_${d}${n}`; }
@@ -1256,14 +1273,16 @@
   }
   // 共有 = PDFのみ
   async function doShare(){
+    const version=draftVersion, name=fileName();
     showOverlay("PDFを作成中…");
     try{
       const pdf=await generatePdf(); if(!pdf){ hideOverlay(); return; }
-      const pdfFile=new File([pdf.output("blob")], fileName(), {type:"application/pdf"});
+      assertDraftVersion(version);
+      const pdfFile=new File([pdf.output("blob")], name, {type:"application/pdf"});
       hideOverlay();
-      const res=await shareOrDownload([pdfFile], {title:fileName()});
+      const res=await shareOrDownload([pdfFile], {title:name});
       if(res==="downloaded") toast("PDFを保存しました。LINEアプリに添付して送れます"); else if(res==="shared") toast("PDFを共有しました");
-    }catch(err){ console.error(err); toast("作成に失敗しました"); hideOverlay(); }
+    }catch(err){ console.error(err); toast(err.name==="DraftChangedError"?err.message:"作成に失敗しました"); hideOverlay(); }
   }
   function openOutputMenu(){ $("outputMenu").classList.add("on"); }
   function closeOutputMenu(){ $("outputMenu").classList.remove("on"); }
@@ -1287,13 +1306,16 @@
   }
   async function doSavePdf(){
     closeOutputMenu();
+    const version=draftVersion, name=fileName();
     let handle=null;
     try{
       // 保存先選択はユーザー操作直後に開く必要があるため、PDF生成より先に実行する
-      handle=await choosePdfSaveHandle(fileName());
+      handle=await choosePdfSaveHandle(name);
       if(handle===false) return;
+      assertDraftVersion(version);
       showOverlay("PDFを作成中…");
       const pdf=await generatePdf(); if(!pdf){ hideOverlay(); return; }
+      assertDraftVersion(version);
       const blob=pdf.output("blob");
       if(handle){
         const writable=await handle.createWritable();
@@ -1302,11 +1324,11 @@
         hideOverlay();
         toast("PDFを指定した場所に保存しました");
       } else {
-        downloadPdfBlob(blob,fileName());
+        downloadPdfBlob(blob,name);
         hideOverlay();
         toast("PDFを保存しました");
       }
-    }catch(err){ console.error(err); hideOverlay(); toast("PDFの保存に失敗しました"); }
+    }catch(err){ console.error(err); hideOverlay(); toast(err.name==="DraftChangedError"?err.message:"PDFの保存に失敗しました"); }
   }
   $("btnSavePdf").addEventListener("click",doSaveData);
   $("btnLoad").addEventListener("click",()=>$("inDraft").click());
@@ -1398,6 +1420,7 @@
   }
   async function openPreview(){
     if(!window.html2canvas){ toast("読込中です。少し待って再度お試しください"); return; }
+    const version=draftVersion, sourceAtt=[...attachments];
     showOverlay("プレビューを作成中…");
     try{
       buildPrintSheet();
@@ -1405,10 +1428,12 @@
       const imgs=[];
       for(const el of pageEls){
         const c=await html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,windowWidth:1480});
+        assertDraftVersion(version);
         imgs.push(c.toDataURL("image/jpeg",0.9));
       }
-      const atts = attachments.length
-        ? attachments.map(a=>`<div class="pv-att"><div class="pv-att-view"><img class="pv-zoom fit" draggable="false" src="${esc(a.dataUrl)}"></div><span>${esc(a.label||"添付")}</span></div>`).join("")
+      assertDraftVersion(version);
+      const atts = sourceAtt.length
+        ? sourceAtt.map(a=>`<div class="pv-att"><div class="pv-att-view"><img class="pv-zoom fit" draggable="false" src="${esc(a.dataUrl)}"></div><span>${esc(a.label||"添付")}</span></div>`).join("")
         : `<div class="pv-empty">添付はありません</div>`;
       const sheets = imgs.map((src,i)=>`
         <div class="pv-label">精算書${imgs.length>1?`（${i+1} / ${imgs.length} ページ）`:""}</div>
@@ -1416,14 +1441,14 @@
         <div class="pv-sheetwrap"><img class="pv-sheet pv-zoom" draggable="false" src="${src}"></div>`).join("");
       $("pvBody").innerHTML=
         sheets +
-        `<div class="pv-label">添付書類（${attachments.length}件）</div>
-        ${attachments.length ? `<div class="pv-hint">添付画像も2本指・マウスホイールで拡大・縮小できます</div>` : ""}
+        `<div class="pv-label">添付書類（${sourceAtt.length}件）</div>
+        ${sourceAtt.length ? `<div class="pv-hint">添付画像も2本指・マウスホイールで拡大・縮小できます</div>` : ""}
         <div class="pv-atts">${atts}</div>`;
       $("pvBody").querySelectorAll(".pv-zoom").forEach(bindPreviewZoom);
       hideOverlay();
       $("preview").classList.add("on");
       $("pvBody").scrollTop=0;
-    }catch(err){ console.error(err); hideOverlay(); toast("プレビュー作成に失敗しました"); }
+    }catch(err){ console.error(err); hideOverlay(); toast(err.name==="DraftChangedError"?err.message:"プレビュー作成に失敗しました"); }
   }
   $("btnPreview").addEventListener("click",openPreview);
   $("pvClose").addEventListener("click",()=>$("preview").classList.remove("on"));
@@ -1432,6 +1457,10 @@
   function neededCats(){
     const set=new Set();
     rows.forEach(r=>{
+      if(isAllOther(r)){
+        if([...AMT_KEYS,"other3","other4"].some(key=>toNum(r[key])>0)) set.add("その他");
+        return;
+      }
       if(r.transportKind==="交通費" && toNum(r.transport)>0) set.add("交通費");
       if(r.lodgingKind==="宿泊費" && toNum(r.lodging)>0) set.add("宿泊費");
       if(r.gasMode==="manual" && toNum(r.gas)>0) set.add("ガソリン代");
@@ -1441,8 +1470,7 @@
         (r.lodgingKind==="その他"&&toNum(r.lodging)>0) ||
         (r.perDiemKind==="その他"&&toNum(r.perDiem)>0) ||
         (r.gasMode==="その他"&&toNum(r.gas)>0) ||
-        toNum(r.other1)>0 || toNum(r.other2)>0 ||
-        (isAllOther(r) && (toNum(r.other3)>0 || toNum(r.other4)>0));
+        toNum(r.other1)>0 || toNum(r.other2)>0;
       if(other) set.add("その他");
     });
     return [...set];
@@ -1539,7 +1567,11 @@
       renderRows(); renderAtt(); saveDraft(); toast("保存データを読み込みました");
     }catch(err){ console.error(err); toast("読み込みに失敗しました（ファイル形式をご確認ください）"); }
   });
-  function scheduleSave(){ loadVersion++; clearTimeout(saveTimer); saveTimer=setTimeout(saveDraft,600); }
+  function scheduleSave(invalidateLoad=true){
+    // 添付の完了は選択時に復元を取り消しているため、後から選んだJSON読込を取り消さない。
+    if(invalidateLoad) loadVersion++;
+    clearTimeout(saveTimer); saveTimer=setTimeout(saveDraft,600);
+  }
   function queueDraftWrite(task){
     const write=draftWrite.then(task,task);
     draftWrite=write.catch(()=>{});
@@ -1575,7 +1607,7 @@
   function migrate(r){
     const base=newRow(); base.id=r.id!=null?r.id:base.id;
     const m=Object.assign(base,r);
-    if(!Array.isArray(m.dates) || !m.dates.length){
+    if(!Array.isArray(r.dates)){
       m.dates = (m.date && /^\d{4}-\d{2}-\d{2}$/.test(m.date)) ? [{type:"single",d1:m.date}] : [{type:"single",d1:""}];
     }
     // 旧データ互換：宿泊日当は以前は手入力のみ。モード未設定で金額があれば手動扱いにして金額を保持
