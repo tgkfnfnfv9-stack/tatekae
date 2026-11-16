@@ -167,6 +167,9 @@
   .output-choice.primary{background:var(--shu);color:#fff;border-color:var(--shu)}
   .output-choice svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:2}
   .output-cancel{width:100%;font-family:inherit;border:none;background:none;color:var(--sumi-soft);font-size:13px;font-weight:700;padding:12px 8px 4px;margin-top:4px}
+  .ai-text{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;border:1.5px solid var(--keisen-strong);border-radius:11px;padding:10px;background:#fff;color:var(--sumi);resize:vertical;box-sizing:border-box}
+  .ai-text:focus{outline:2px solid var(--ai-soft);outline-offset:0;border-color:var(--ai-soft)}
+  .ai-err{color:#b3261e;font-size:12px;min-height:16px;text-align:center;margin:6px 0 0}
   @media (min-width:700px){.output-menu{align-items:center}.output-panel{padding:18px}}
 
   /* 添付チェック */
@@ -310,6 +313,10 @@
     <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 17v-6M9 14l3 3 3-3" transform="rotate(180 12 14)"/></svg>
     読込
   </button>
+  <button class="btn btn-load" id="btnAi">
+    <svg viewBox="0 0 24 24"><path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 16.6l-1.9-4.9L5 9.8l5.1-1.9z"/><path d="M18.8 15.2l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
+    AI取込
+  </button>
   <button class="btn btn-share" id="btnShare">
     <svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 13v6h14v-6"/></svg>
     出力
@@ -329,6 +336,17 @@
       PDF保存
     </button>
     <button class="output-cancel" id="outputCancel" type="button">キャンセル</button>
+  </div>
+</div>
+
+<div class="output-menu" id="aiMenu" role="dialog" aria-modal="true" aria-labelledby="aiTitle">
+  <div class="output-panel">
+    <div class="output-title" id="aiTitle">AI取込</div>
+    <p class="output-note">Museが作成した立替精算書JSONを貼り付けてください<br>現在の入力・添付は、貼り付けた内容に置き換わります<br>領収書は取り込んだ後に追加してください</p>
+    <textarea class="ai-text" id="aiText" placeholder='{"date":"2026-11-17","name":"瑞澤","rows":[ ... ]}'></textarea>
+    <p class="ai-err" id="aiErr"></p>
+    <button class="output-choice primary" id="aiApply" type="button">取り込む</button>
+    <button class="output-cancel" id="aiCancel" type="button">キャンセル</button>
   </div>
 </div>
 
@@ -1332,6 +1350,28 @@
   }
   $("btnSavePdf").addEventListener("click",doSaveData);
   $("btnLoad").addEventListener("click",()=>$("inDraft").click());
+  /* AI取込：Museが作成したJSON（保存データと同じ形式）を貼り付けて反映する。形式の説明は AI_SCHEMA.md */
+  function openAiMenu(){ $("aiErr").textContent=""; $("aiMenu").classList.add("on"); }
+  function closeAiMenu(){ $("aiMenu").classList.remove("on"); }
+  function applyAiText(){
+    const raw=$("aiText").value.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");
+    if(!raw){ $("aiErr").textContent="JSONが貼り付けられていません"; return; }
+    let d;
+    try{ d=JSON.parse(raw); }catch(err){ console.error(err); $("aiErr").textContent="読み込みに失敗しました（JSONの形式をご確認ください）"; return; }
+    if(d && !Array.isArray(d.rows) && d.data && Array.isArray(d.data.rows)) d=d.data;
+    const request=++loadVersion;
+    try{
+      if(request!==loadVersion) return;
+      restoreSnapshot(d);
+      renderRows(); renderAtt(); saveDraft();
+      closeAiMenu();
+      toast("AIデータを読み込みました");
+    }catch(err){ console.error(err); $("aiErr").textContent="読み込みに失敗しました（JSONの形式をご確認ください）"; }
+  }
+  $("btnAi").addEventListener("click",openAiMenu);
+  $("aiCancel").addEventListener("click",closeAiMenu);
+  $("aiApply").addEventListener("click",applyAiText);
+  $("aiMenu").addEventListener("click",e=>{ if(e.target===$("aiMenu")) closeAiMenu(); });
   $("btnShare").addEventListener("click",openOutputMenu);
   $("pvSave").addEventListener("click",doSaveData);
   $("pvShare").addEventListener("click",openOutputMenu);
@@ -1725,6 +1765,7 @@
     $("f_date").value=today(); rows=[newRow()];
     renderRows(); renderAtt();
     if(await loadDraft()){ renderRows(); renderAtt(); }
+    try{ if(new URLSearchParams(location.search).get("ai")==="1") openAiMenu(); }catch(e){}
   })();
 })();
 </script>
