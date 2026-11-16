@@ -1230,6 +1230,26 @@
   }
 
   /* ── PDF ── */
+  // 添付ラベル用：jsPDFの標準フォントは日本語を描けない（文字化けする）ため、
+  // ラベル文字列をCanvasで画像化してから貼る。戻り値は {url,w,h,base}（mm単位、baseはベースライン位置）。
+  // Canvasが使えない環境では null を返し、呼び出し側が従来のテキスト描画へフォールバックする。
+  function labelImage(text){
+    try{
+      if(text.length>200) text=text.slice(0,200)+"…"; // Canvas幅の上限対策（通常のラベルはファイル名由来で短い）
+      const fs=48, pad=4, k=25.4/384; // 48px ≒ 9pt になる換算（384dpi相当）
+      const cv=document.createElement("canvas");
+      let ctx=cv.getContext("2d");
+      if(!ctx || typeof ctx.measureText!=="function") return null;
+      ctx.font=fs+"px sans-serif";
+      cv.width=Math.ceil(ctx.measureText(text).width)+pad*2;
+      cv.height=Math.ceil(fs*1.3);
+      ctx=cv.getContext("2d");
+      ctx.font=fs+"px sans-serif";
+      ctx.fillStyle="#787878";
+      ctx.fillText(text,pad,fs*1.02);
+      return { url: cv.toDataURL("image/png"), w: cv.width*k, h: cv.height*k, base: fs*1.02*k, pad: pad*k };
+    }catch(e){ return null; }
+  }
   function assertDraftVersion(version){
     if(version===draftVersion) return;
     const err=new Error("入力内容が変わったため、もう一度確認・出力してください");
@@ -1258,8 +1278,17 @@
       assertDraftVersion(version);
       pdf.addPage("a4","portrait");
       const PW=pdf.internal.pageSize.getWidth(), PH=pdf.internal.pageSize.getHeight();
-      pdf.setFontSize(9); pdf.setTextColor(120);
-      if(a.label) pdf.text("添付: "+a.label,8,9);
+      if(a.label){
+        const li=labelImage("添付: "+a.label);
+        if(li){
+          let w=li.w, h=li.h, base=li.base, pad=li.pad;
+          if(w>PW-16){ const r=(PW-16)/w; w*=r; h*=r; base*=r; pad*=r; } // 長いラベルはページ幅に収める
+          pdf.addImage(li.url,"PNG",8-pad,9-base,w,h); // pad分を差し引き、文字の開始位置を従来のx=8mmに合わせる
+        }else{
+          pdf.setFontSize(9); pdf.setTextColor(120);
+          pdf.text("添付: "+a.label,8,9);
+        }
+      }
       const mm=10, availW=PW-mm*2, availH=PH-mm*2-6;
       let w=availW, h=dim.h*w/dim.w; if(h>availH){ h=availH; w=dim.w*h/dim.h; }
       pdf.addImage(a.dataUrl,format,(PW-w)/2,14,w,h);
