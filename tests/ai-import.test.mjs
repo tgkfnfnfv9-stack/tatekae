@@ -42,7 +42,7 @@ function harness() {
     document, window: { storage: undefined, pageYOffset: 0, scrollTo() {},
       addEventListener(type, fn) { windowHandlers.set(type, fn); } },
     localStorage: { setItem() {}, getItem() { return null; }, removeItem() {} },
-    navigator: {}, console: { error() {} }, confirm: () => true,
+    navigator: {}, console: { error() {} }, confirm: () => true, atob, TextDecoder,
     setTimeout(fn) { const id = ++timerId; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
   });
@@ -120,4 +120,25 @@ test("AI取込：不正なJSONでは現在の入力を保持し、エラーを�
   assert.match(h.aiError(), /失敗/);
   await h.pasteAi(JSON.stringify({ rows: "invalid" }));
   assert.deepEqual(h.state(), before);
+});
+
+test("AI取込：リンク（#ai=）や説明文付きの返答をそのまま貼っても取り込める", async () => {
+  const h = harness();
+  const link = "https://tgkfnfnfv9-stack.github.io/tatekae/#ai=" + encodeURIComponent(JSON.stringify(sample));
+  await h.pasteAi("できました。こちらを開いてください：\n" + link);
+  assert.equal(h.state().rows.length, 2);
+  assert.equal(h.state().rows[0].gas, "2160");
+  const h2 = harness();
+  await h2.pasteAi("はい。\n```json\n" + JSON.stringify(sample) + "\n```\nご確認ください。");
+  assert.equal(h2.state().name, "瑞澤");
+  const h3 = harness();
+  await h3.pasteAi("https://tgkfnfnfv9-stack.github.io/tatekae/#ai=" + Buffer.from(JSON.stringify(sample)).toString("base64url"));
+  assert.equal(h3.state().rows.length, 2);
+});
+
+test("リンクで開くと自動取込し、クリップボード取込・指示文コピーのボタンがある", () => {
+  assert.match(html, /id="aiClip"[\s\S]*?コピーしたAIの返答を取り込む\s*<\/button>/);
+  assert.match(html, /id="aiPrompt"[\s\S]*?AIへの指示文をコピー\s*<\/button>/);
+  assert.match(script, /if\(importAiFromLocation\(\)\) return;/);
+  assert.match(script, /history\.replaceState/);
 });

@@ -169,6 +169,7 @@
   .output-cancel{width:100%;font-family:inherit;border:none;background:none;color:var(--sumi-soft);font-size:13px;font-weight:700;padding:12px 8px 4px;margin-top:4px}
   .ai-text{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;border:1.5px solid var(--keisen-strong);border-radius:11px;padding:10px;background:#fff;color:var(--sumi);resize:vertical;box-sizing:border-box}
   .ai-text:focus{outline:2px solid var(--ai-soft);outline-offset:0;border-color:var(--ai-soft)}
+  .ai-or{font-size:12px;color:#666;text-align:center;margin:12px 0 6px}
   .ai-err{color:#b3261e;font-size:12px;min-height:16px;text-align:center;margin:6px 0 0}
   @media (min-width:700px){.output-menu{align-items:center}.output-panel{padding:18px}}
 
@@ -342,10 +343,13 @@
 <div class="output-menu" id="aiMenu" role="dialog" aria-modal="true" aria-labelledby="aiTitle">
   <div class="output-panel">
     <div class="output-title" id="aiTitle">AI取込</div>
-    <p class="output-note">Museが作成した立替精算書JSONを貼り付けてください<br>現在の入力・添付は、貼り付けた内容に置き換わります<br>領収書は取り込んだ後に追加してください</p>
+    <p class="output-note">AIの返答（JSONまたはリンク）をコピーして下のボタンを押してください<br>現在の入力・添付は、取り込んだ内容に置き換わります<br>領収書は取り込んだ後に追加してください</p>
+    <button class="output-choice primary" id="aiClip" type="button">📋 コピーしたAIの返答を取り込む</button>
+    <p class="ai-or">または、下に貼り付け</p>
     <textarea class="ai-text" id="aiText" placeholder='{"date":"2026-11-17","name":"瑞澤","rows":[ ... ]}'></textarea>
     <p class="ai-err" id="aiErr"></p>
-    <button class="output-choice primary" id="aiApply" type="button">取り込む</button>
+    <button class="output-choice" id="aiApply" type="button">貼り付けた内容を取り込む</button>
+    <button class="output-choice" id="aiPrompt" type="button">AIへの指示文をコピー</button>
     <button class="output-cancel" id="aiCancel" type="button">キャンセル</button>
   </div>
 </div>
@@ -1382,24 +1386,82 @@
   /* AI取込：Museが作成したJSON（保存データと同じ形式）を貼り付けて反映する。形式の説明は AI_SCHEMA.md */
   function openAiMenu(){ $("aiErr").textContent=""; $("aiMenu").classList.add("on"); }
   function closeAiMenu(){ $("aiMenu").classList.remove("on"); }
-  function applyAiText(){
-    const raw=$("aiText").value.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");
-    if(!raw){ $("aiErr").textContent="JSONが貼り付けられていません"; return; }
-    let d;
-    try{ d=JSON.parse(raw); }catch(err){ console.error(err); $("aiErr").textContent="読み込みに失敗しました（JSONの形式をご確認ください）"; return; }
-    if(d && !Array.isArray(d.rows) && d.data && Array.isArray(d.data.rows)) d=d.data;
-    const request=++loadVersion;
+  /* AIの返答・リンクからJSONを取り出す（```json・前後の説明文・{data:…}・「ツールURL#ai=データ」のリンクに対応）。 */
+  function aiDecodeLink(payload){
+    let text=String(payload==null?"":payload).trim();
+    if(!text) throw new Error("リンクにデータが入っていません");
+    try{ text=decodeURIComponent(text); }catch(e){}
+    text=text.trim();
+    if(text.startsWith("{")) return text;
     try{
-      if(request!==loadVersion) return;
-      restoreSnapshot(d);
-      renderRows(); renderAtt(); saveDraft();
-      closeAiMenu();
-      toast("AIデータを読み込みました");
-    }catch(err){ console.error(err); $("aiErr").textContent="読み込みに失敗しました（JSONの形式をご確認ください）"; }
+      let b64=text.replace(/-/g,"+").replace(/_/g,"/").replace(/\s+/g,""); while(b64.length%4) b64+="=";
+      const bin=atob(b64), bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+      return new TextDecoder("utf-8").decode(bytes);
+    }catch(e){ throw new Error("リンクのデータを読み取れません。AIにもう一度リンクを作ってもらうか、JSONを貼り付けてください"); }
+  }
+  function aiLinkPayload(text){ const m=/[#&]ai=([^\s#&]+)/.exec(String(text||"")); return m&&m[1]!=="1"?m[1]:null; }
+  function parseAiText(text){
+    let raw=String(text==null?"":text).trim();
+    if(!raw) throw new Error("JSONが貼り付けられていません");
+    if(!raw.startsWith("{")){ const linked=aiLinkPayload(raw); if(linked) raw=aiDecodeLink(linked); }
+    raw=raw.replace(/^[\s\S]*?```(?:json)?\s*(?=\{)/i,"").replace(/\s*```[\s\S]*$/,"").trim();
+    let d;
+    try{ d=JSON.parse(raw); }
+    catch(e){
+      const s=raw.indexOf("{"), t=raw.lastIndexOf("}");
+      if(s<0||t<=s) throw new Error("読み込みに失敗しました（JSONの形式をご確認ください）");
+      try{ d=JSON.parse(raw.slice(s,t+1)); }catch(e2){ throw new Error("読み込みに失敗しました（JSONの形式をご確認ください）"); }
+    }
+    if(!d||typeof d!=="object"||Array.isArray(d)) throw new Error("読み込みに失敗しました（JSONの形式をご確認ください）");
+    return d;
+  }
+  function applyAiData(d){
+    if(d && !Array.isArray(d.rows) && d.data && Array.isArray(d.data.rows)) d=d.data;
+    ++loadVersion;
+    restoreSnapshot(d);
+    renderRows(); renderAtt(); saveDraft();
+    toast("AIデータを読み込みました");
+  }
+  function applyAiText(text){
+    $("aiErr").textContent="";
+    if(typeof text!=="string") text=$("aiText").value;
+    try{ applyAiData(parseAiText(text)); closeAiMenu(); }
+    catch(err){ console.error(err); $("aiErr").textContent=/^(JSONが|リンク)/.test(err.message||"")?err.message:"読み込みに失敗しました（JSONの形式をご確認ください）"; }
+  }
+  async function applyAiClipboard(){
+    let text="";
+    try{ text=await navigator.clipboard.readText(); }
+    catch(err){ $("aiErr").textContent="クリップボードを読めませんでした。下の欄に貼り付けて「貼り付けた内容を取り込む」を押してください"; $("aiText").focus(); return; }
+    if(!text.trim()){ $("aiErr").textContent="クリップボードが空です。AIの返答をコピーしてから押してください"; return; }
+    $("aiText").value=text; applyAiText(text);
+  }
+  const AI_PROMPT="立替精算書を作ります。リポジトリ tgkfnfnfv9-stack/tatekae の AI_SCHEMA.md（https://github.com/tgkfnfnfv9-stack/tatekae/blob/main/AI_SCHEMA.md）の形式でデータ（JSON）を作ってください。金額の計算はしない（ツールが自動計算）。添付は入れない（attachmentsは[]）。\n【返し方】\n①リンク：JSONを改行なしの1行にしてencodeURIComponentで変換し、https://tgkfnfnfv9-stack.github.io/tatekae/#ai= の後ろに付けたURL。コード実行が使えるなら必ずコードで作成（Pythonなら urllib.parse.quote(json.dumps(data,ensure_ascii=False,separators=(',',':')),safe='')）。使えない場合は省略\n②同じJSONを```jsonのコードブロックで\n提出日：\n氏名：\n明細：（高コン番号・日付・行先・片道km・回数、その他費用があれば内容と金額）";
+  async function copyAiPrompt(){
+    let ok=false;
+    try{ await navigator.clipboard.writeText(AI_PROMPT); ok=true; }catch(e){}
+    $("aiErr").textContent=ok?"指示文をコピーしました。AIに貼り付けて内容を書き足してください。返ってきたリンクを押せば完成です":"コピーできませんでした";
+  }
+  /* AIが作ったリンク（https://…/tatekae/#ai=データ）で開かれたら、そのまま取り込む */
+  function hasAiTargetInput(){
+    return attachments.length>0 || !!$("f_name").value.trim() || rows.length>1 || rows.some(r=>r.konNo||r.address||r.transport||r.gasOneway||r.other2||r.other3||r.other4);
+  }
+  function importAiFromLocation(){
+    let payload=null;
+    try{ payload=aiLinkPayload(location.hash); }catch(e){}
+    if(!payload) return false;
+    try{ history.replaceState(null,"",location.pathname+location.search); }catch(e){}
+    let d;
+    try{ d=parseAiText(aiDecodeLink(payload)); }
+    catch(err){ openAiMenu(); $("aiErr").textContent=err.message; return false; }
+    if(hasAiTargetInput() && !confirm("AIが作成したデータで、現在の入力・添付を置き換えます。よろしいですか？")) return false;
+    try{ applyAiData(d); return true; }
+    catch(err){ console.error(err); openAiMenu(); $("aiErr").textContent="読み込みに失敗しました（JSONの形式をご確認ください）"; return false; }
   }
   $("btnAi").addEventListener("click",openAiMenu);
   $("aiCancel").addEventListener("click",closeAiMenu);
-  $("aiApply").addEventListener("click",applyAiText);
+  $("aiApply").addEventListener("click",()=>applyAiText());
+  $("aiClip").addEventListener("click",applyAiClipboard);
+  $("aiPrompt").addEventListener("click",copyAiPrompt);
   $("aiMenu").addEventListener("click",e=>{ if(e.target===$("aiMenu")) closeAiMenu(); });
   $("btnShare").addEventListener("click",openOutputMenu);
   $("pvSave").addEventListener("click",doSaveData);
@@ -1794,6 +1856,7 @@
     $("f_date").value=today(); rows=[newRow()];
     renderRows(); renderAtt();
     if(await loadDraft()){ renderRows(); renderAtt(); }
+    if(importAiFromLocation()) return;
     try{ if(new URLSearchParams(location.search).get("ai")==="1") openAiMenu(); }catch(e){}
   })();
 })();
